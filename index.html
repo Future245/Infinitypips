@@ -433,6 +433,10 @@
     width:7px; height:7px; border-radius:50%; border:1.5px solid var(--purple);
     box-shadow:0 0 8px var(--purple-glow);
   }
+  .status.connected{ color:#3adf8a; }
+  .status.connected .ring{
+    border-color:#3adf8a; box-shadow:0 0 8px rgba(58,223,138,0.6); background:#3adf8a;
+  }
 
   .foot{
     position:relative; z-index:1;
@@ -530,7 +534,7 @@
           <button class="btn btn-login" id="loginBtn" type="button">
             Login
           </button>
-          <div class="status"><span class="ring"></span>Not connected</div>
+          <div class="status" id="derivStatus"><span class="ring"></span>Not connected</div>
         </div>
       </div>
 
@@ -595,6 +599,22 @@
     var DERIV_AUTH_URL = 'https://auth.deriv.com/oauth2/auth';
 
     var loginBtn = document.getElementById('loginBtn');
+    var derivStatus = document.getElementById('derivStatus');
+
+    function refreshDerivStatus(){
+      var token = sessionStorage.getItem('deriv_access_token');
+      if (token && derivStatus){
+        derivStatus.innerHTML = '<span class="ring"></span>Connected';
+        derivStatus.classList.add('connected');
+        if (loginBtn){ loginBtn.textContent = 'Reconnect'; }
+      } else if (derivStatus){
+        derivStatus.innerHTML = '<span class="ring"></span>Not connected';
+        derivStatus.classList.remove('connected');
+        if (loginBtn){ loginBtn.textContent = 'Login'; }
+      }
+    }
+
+    refreshDerivStatus();
 
     function randomString(len){
       var arr = new Uint8Array(len);
