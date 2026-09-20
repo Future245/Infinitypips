@@ -2571,6 +2571,8 @@
       var pendingProposalReqId = null;
       var pendingBuyReqId = null;
       var openContractSubs = {}; // req_id -> { contractId, applied }
+      var reqIdCounter = 100; // balance stream owns req_id 1, so start well clear of it
+      function nextReqId() { reqIdCounter += 1; return reqIdCounter; }
 
       var totalWins = 0;
       var totalLosses = 0;
@@ -2588,7 +2590,7 @@
       }
 
       function subscribeToContract(contractId) {
-        var reqId = Date.now() + 2;
+        var reqId = nextReqId();
         openContractSubs[reqId] = { contractId: contractId, applied: false };
         window.DerivConnection.send({
           proposal_open_contract: 1,
@@ -2647,7 +2649,7 @@
 
         var stake = getStake();
         var currency = (window.DerivConnection && window.DerivConnection.currency) || 'USD';
-        var reqId = Date.now();
+        var reqId = nextReqId();
         pendingProposalReqId = reqId;
 
         var sent = window.DerivConnection.send({
@@ -2688,7 +2690,7 @@
             return;
           }
           if (data.msg_type === 'proposal' && data.proposal) {
-            var buyReqId = Date.now() + 1;
+            var buyReqId = nextReqId();
             pendingBuyReqId = buyReqId;
             window.DerivConnection.send({
               buy: data.proposal.id,
@@ -2715,6 +2717,7 @@
         var sub = openContractSubs[data.req_id];
         if (sub && !sub.applied && data.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
           var poc = data.proposal_open_contract;
+          console.log('Contract update:', poc.contract_id, 'is_sold:', poc.is_sold, 'profit:', poc.profit);
           if (poc.is_sold) {
             sub.applied = true;
             applyPnL(poc.profit);
