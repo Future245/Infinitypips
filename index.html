@@ -343,6 +343,23 @@
       0 0 54px -10px var(--pink-glow);
   }
 
+  .btn-add-email{
+    margin-top:2px;
+    color:#04241c;
+    background:linear-gradient(100deg, var(--mint), var(--blue) 65%, var(--purple));
+    border:none;
+    box-shadow:
+      0 12px 28px -12px var(--mint-glow),
+      0 0 40px -14px var(--blue-glow);
+  }
+  .btn-add-email::before{ background:linear-gradient(100deg, #fff, transparent 60%); }
+  .btn-add-email:hover{
+    filter:brightness(1.07);
+    box-shadow:
+      0 14px 32px -10px var(--mint-glow),
+      0 0 54px -10px var(--blue-glow);
+  }
+
   .field-group label{
     display:block;
     font-size:13px;
@@ -432,10 +449,6 @@
   .status .ring{
     width:7px; height:7px; border-radius:50%; border:1.5px solid var(--purple);
     box-shadow:0 0 8px var(--purple-glow);
-  }
-  .status.connected{ color:#3adf8a; }
-  .status.connected .ring{
-    border-color:#3adf8a; box-shadow:0 0 8px rgba(58,223,138,0.6); background:#3adf8a;
   }
 
   .foot{
@@ -534,7 +547,7 @@
           <button class="btn btn-login" id="loginBtn" type="button">
             Login
           </button>
-          <div class="status" id="derivStatus"><span class="ring"></span>Not connected</div>
+          <div class="status"><span class="ring"></span>Not connected</div>
         </div>
       </div>
 
@@ -550,6 +563,25 @@
           </svg>
         </div>
         <button class="btn btn-activate" id="activateBtn" type="button">Activate license</button>
+      </div>
+
+      <div class="view view-client" id="viewClient" hidden>
+        <button class="back-btn" id="backBtn2" type="button">← Back</button>
+        <p class="serial-heading">Client Port</p>
+        <p class="serial-sub">Add the email linked to your Deriv account</p>
+        <div class="serial-input-wrap">
+          <input class="serial-input" id="emailInput" type="email" placeholder="you@email.com" autocomplete="off" spellcheck="false">
+          <svg class="serial-key-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="3" y="5.5" width="18" height="13" rx="2.4" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M4 7 L12 13 L20 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <button class="btn btn-add-email" id="addEmailBtn" type="button">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          </svg>
+          Add email
+        </button>
       </div>
     </div>
 
@@ -571,101 +603,30 @@
   (function(){
     var settingsBtn = document.getElementById('settingsBtn');
     var backBtn = document.getElementById('backBtn');
+    var backBtn2 = document.getElementById('backBtn2');
+    var activateBtn = document.getElementById('activateBtn');
     var viewHome = document.getElementById('viewHome');
     var viewSettings = document.getElementById('viewSettings');
+    var viewClient = document.getElementById('viewClient');
     var serialInput = document.getElementById('serialInput');
+    var emailInput = document.getElementById('emailInput');
 
-    function showSettings(){
-      viewHome.hidden = true;
-      viewSettings.hidden = false;
+    function showOnly(view){
+      [viewHome, viewSettings, viewClient].forEach(function(v){ v.hidden = (v !== view); });
+    }
+
+    settingsBtn.addEventListener('click', function(){
+      showOnly(viewSettings);
       serialInput.focus();
-    }
-    function showHome(){
-      viewSettings.hidden = true;
-      viewHome.hidden = false;
-    }
+    });
+    backBtn.addEventListener('click', function(){ showOnly(viewHome); });
 
-    settingsBtn.addEventListener('click', showSettings);
-    backBtn.addEventListener('click', showHome);
-  })();
-
-  /* ===== Deriv OAuth2 (Authorization Code + PKCE) ===== */
-  (function(){
-    // TODO: replace with your registered Deriv app values
-    // Register an app at https://developers.deriv.com/ to get an app_id (client_id)
-    var DERIV_CLIENT_ID   = '34s6rrHpvnegnGSg5mrWW';
-    var DERIV_REDIRECT_URI = 'https://infinitypips.netlify.app/callback'; // must exactly match what's registered with Deriv
-    var DERIV_SCOPES = 'trade account_manage'; // must match the scopes enabled on your Deriv app (Trade, Account management)
-    var DERIV_AUTH_URL = 'https://auth.deriv.com/oauth2/auth';
-
-    var loginBtn = document.getElementById('loginBtn');
-    var derivStatus = document.getElementById('derivStatus');
-
-    function refreshDerivStatus(){
-      var token = sessionStorage.getItem('deriv_access_token');
-      if (token && derivStatus){
-        derivStatus.innerHTML = '<span class="ring"></span>Connected';
-        derivStatus.classList.add('connected');
-        if (loginBtn){ loginBtn.textContent = 'Reconnect'; }
-      } else if (derivStatus){
-        derivStatus.innerHTML = '<span class="ring"></span>Not connected';
-        derivStatus.classList.remove('connected');
-        if (loginBtn){ loginBtn.textContent = 'Login'; }
-      }
-    }
-
-    refreshDerivStatus();
-
-    function randomString(len){
-      var arr = new Uint8Array(len);
-      crypto.getRandomValues(arr);
-      var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-      var out = '';
-      for (var i = 0; i < arr.length; i++){ out += chars[arr[i] % chars.length]; }
-      return out;
-    }
-
-    function base64UrlEncode(buffer){
-      var bytes = new Uint8Array(buffer);
-      var binary = '';
-      for (var i = 0; i < bytes.length; i++){ binary += String.fromCharCode(bytes[i]); }
-      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    }
-
-    async function generateCodeChallenge(verifier){
-      var digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-      return base64UrlEncode(digest);
-    }
-
-    async function startDerivLogin(){
-      var codeVerifier = randomString(64);
-      var codeChallenge = await generateCodeChallenge(codeVerifier);
-      var state = randomString(32);
-
-      // Stored so the callback page can verify state and complete the token exchange
-      sessionStorage.setItem('deriv_code_verifier', codeVerifier);
-      sessionStorage.setItem('deriv_oauth_state', state);
-
-      var params = new URLSearchParams({
-        response_type: 'code',
-        client_id: DERIV_CLIENT_ID,
-        redirect_uri: DERIV_REDIRECT_URI,
-        scope: DERIV_SCOPES,
-        state: state,
-        code_challenge: codeChallenge,
-        code_challenge_method: 'S256'
-      });
-
-      window.location.href = DERIV_AUTH_URL + '?' + params.toString();
-    }
-
-    if (loginBtn){
-      loginBtn.addEventListener('click', function(){
-        startDerivLogin().catch(function(err){
-          console.error('Deriv login failed to start:', err);
-        });
-      });
-    }
+    // Accepts any text as a serial key for now — no validation.
+    activateBtn.addEventListener('click', function(){
+      showOnly(viewClient);
+      emailInput.focus();
+    });
+    backBtn2.addEventListener('click', function(){ showOnly(viewSettings); });
   })();
 </script>
 </body>
