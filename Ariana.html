@@ -2717,20 +2717,46 @@
         var sub = openContractSubs[data.req_id];
         if (sub && !sub.applied && data.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
           var poc = data.proposal_open_contract;
-          console.log('Contract update:', poc.contract_id, 'is_sold:', poc.is_sold, 'profit:', poc.profit);
+          logDebug(JSON.stringify({
+            contract_id: poc.contract_id, is_sold: poc.is_sold, status: poc.status,
+            profit: poc.profit, sell_price: poc.sell_price, buy_price: poc.buy_price,
+            payout: poc.payout
+          }));
           if (poc.is_sold) {
             sub.applied = true;
-            applyPnL(poc.profit);
+            var profitNum = Number(poc.profit);
+            applyPnL(profitNum);
             showToast(
               'Contract #' + poc.contract_id + ' settled: ' +
-              (poc.profit >= 0 ? '+' : '-') + '$' + Math.abs(poc.profit).toFixed(2),
-              poc.profit < 0
+              (profitNum >= 0 ? '+' : '-') + '$' + Math.abs(profitNum).toFixed(2),
+              profitNum < 0
             );
             if (data.subscription && data.subscription.id) {
               window.DerivConnection.send({ forget: data.subscription.id });
             }
           }
         }
+      }
+
+      function ensureDebugPanel() {
+        var el = document.getElementById('trade-debug');
+        if (el) return el;
+        el = document.createElement('div');
+        el.id = 'trade-debug';
+        el.style.cssText = [
+          'position:fixed', 'left:8px', 'right:8px', 'top:8px', 'max-height:40vh',
+          'overflow:auto', 'background:rgba(0,0,0,0.85)', 'color:#7dffc0',
+          'font:11px/1.4 monospace', 'padding:8px', 'border-radius:8px',
+          'z-index:999999', 'border:1px solid rgba(125,255,192,0.4)', 'white-space:pre-wrap',
+          'word-break:break-all'
+        ].join(';');
+        document.body.appendChild(el);
+        return el;
+      }
+
+      function logDebug(line) {
+        var el = ensureDebugPanel();
+        el.textContent = line + '\n\n' + el.textContent;
       }
 
       var power = document.getElementById('holo-toggle');
