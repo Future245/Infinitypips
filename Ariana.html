@@ -2465,19 +2465,21 @@
         }
 
         if (data.msg_type === 'balance' && data.balance) {
+          gotBalance = true;
           balanceEl.textContent = formatBalance(data.balance.balance, data.balance.currency);
         }
       };
 
+      var gotBalance = false;
+
       ws.onerror = function (err) {
-        console.error('Deriv WebSocket error:', err);
-        balanceEl.textContent = 'WS error';
+        console.error('Deriv WebSocket error event fired (browsers hide details on this event).');
       };
 
       ws.onclose = function (ev) {
-        console.error('Deriv WebSocket closed:', ev.code, ev.reason);
-        if (balanceEl.textContent === '$ 0.00' || balanceEl.textContent.indexOf('$') === 0) {
-          balanceEl.textContent = 'Closed: ' + ev.code;
+        console.error('Deriv WebSocket closed:', ev.code, ev.reason, 'wasClean:', ev.wasClean);
+        if (!gotBalance) {
+          balanceEl.textContent = 'Closed ' + ev.code + (ev.reason ? ': ' + ev.reason : '');
         }
       };
     })();
