@@ -2420,15 +2420,16 @@
     })();
   </script>
   <script>
-    /* -- Live Deriv account balance --
-       Reads the access token saved by callback.html, authorizes over
-       Deriv's WebSocket API, and keeps the balance display updated. */
+    /* -- Live Deriv account balance (Options REST + WebSocket / OTP flow) --
+       Reads the OAuth access token saved by callback.html, fetches the
+       user's accounts via REST, requests an authenticated WebSocket URL
+       (OTP) for the demo account, then subscribes to live balance. */
     (function () {
-      var DERIV_APP_ID = '34s6rrHpvnegnGSg5mrWW'; // same App ID used for OAuth
+      var API_BASE = 'https://api.derivws.com';
       var balanceEl = document.getElementById('balance-value');
       if (!balanceEl) return;
 
-      var CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', AUD: 'A$' };
+      var CURRENCY_SYMBOLS = { USD: '$', EUR: '\u20ac', GBP: '\u00a3', AUD: 'A$' };
 
       function formatBalance(amount, currency) {
         var symbol = CURRENCY_SYMBOLS[currency] || (currency ? currency + ' ' : '$');
@@ -2438,50 +2439,88 @@
         });
       }
 
+      function showError(label) {
+        balanceEl.textContent = label;
+      }
+
       var token = sessionStorage.getItem('deriv_access_token');
       if (!token) {
         window.location.href = '/';
         return;
       }
 
-      var ws = new WebSocket('wss://ws.derivws.com/websockets/v3?app_id=' + DERIV_APP_ID);
+      var authHeaders = { 'Authorization': 'Bearer ' + token };
 
-      ws.onopen = function () {
-        ws.send(JSON.stringify({ authorize: token }));
-      };
+      // Step 1: get the user's Options trading accounts
+      fetch(API_BASE + '/trading/v1/options/accounts', { headers: authHeaders })
+        .then(function (res) {
+          if (!res.ok) throw new Error('accounts_http_' + res.status);
+          return res.json();
+        })
+        .then(function (result) {
+          var accounts = result && result.data;
+          if (!Array.isArray(accounts) || accounts.length === 0) {
+            throw new Error('no_accounts');
+          }
 
-      ws.onmessage = function (event) {
-        var data;
-        try { data = JSON.parse(event.data); } catch (e) { return; }
+          console.log('Deriv accounts:', accounts);
 
-        if (data.error) {
-          console.error('Deriv API error:', data.error.code, data.error.message);
-          balanceEl.textContent = 'Err: ' + data.error.code;
-          return;
-        }
+          // Prefer a demo/virtual account; otherwise just use the first one.
+          var account = accounts.find(function (a) {
+            return a.account_type === 'demo' || a.is_virtual === true || a.type === 'demo';
+          }) || accounts[0];
 
-        if (data.msg_type === 'authorize') {
-          ws.send(JSON.stringify({ balance: 1, subscribe: 1 }));
-        }
+          var accountId = account.id || account.account_id || account.loginid;
+          if (!accountId) throw new Error('no_account_id');
 
-        if (data.msg_type === 'balance' && data.balance) {
-          gotBalance = true;
-          balanceEl.textContent = formatBalance(data.balance.balance, data.balance.currency);
-        }
-      };
+          // Step 2: get an authenticated WebSocket URL (OTP) for that account
+          return fetch(API_BASE + '/trading/v1/options/accounts/' + accountId + '/otp', {
+            method: 'POST',
+            headers: authHeaders
+          });
+        })
+        .then(function (res) {
+          if (!res.ok) throw new Error('otp_http_' + res.status);
+          return res.json();
+        })
+        .then(function (otpResult) {
+          var wsUrl = otpResult && otpResult.data && otpResult.data.url;
+          if (!wsUrl) throw new Error('no_ws_url');
 
-      var gotBalance = false;
+          // Step 3: connect using the already-authenticated URL and subscribe to balance
+          var ws = new WebSocket(wsUrl);
 
-      ws.onerror = function (err) {
-        console.error('Deriv WebSocket error event fired (browsers hide details on this event).');
-      };
+          ws.onopen = function () {
+            ws.send(JSON.stringify({ balance: 1, subscribe: 1, req_id: 1 }));
+          };
 
-      ws.onclose = function (ev) {
-        console.error('Deriv WebSocket closed:', ev.code, ev.reason, 'wasClean:', ev.wasClean);
-        if (!gotBalance) {
-          balanceEl.textContent = 'Closed ' + ev.code + (ev.reason ? ': ' + ev.reason : '');
-        }
-      };
+          ws.onmessage = function (event) {
+            var data;
+            try { data = JSON.parse(event.data); } catch (e) { return; }
+
+            if (data.error) {
+              console.error('Deriv API error:', data.error.code, data.error.message);
+              showError('Err: ' + data.error.code);
+              return;
+            }
+
+            if (data.msg_type === 'balance' && data.balance) {
+              balanceEl.textContent = formatBalance(data.balance.balance, data.balance.currency);
+            }
+          };
+
+          ws.onerror = function () {
+            console.error('Options WebSocket error event fired.');
+          };
+
+          ws.onclose = function (ev) {
+            console.error('Options WebSocket closed:', ev.code, ev.reason);
+          };
+        })
+        .catch(function (err) {
+          console.error('Balance setup failed:', err.message);
+          showError('Error: ' + err.message);
+        });
     })();
   </script>
 </body>
