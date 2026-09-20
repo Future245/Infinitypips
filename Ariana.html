@@ -2112,9 +2112,9 @@
       <section class="trade-history">
         <div class="table-wrap">
           <div class="stats-bar">
-          <span class="losses-count">- $0.00</span>
+          <span class="losses-count" id="losses-total">- $0.00</span>
             <span class="ratio"> Table History </span>
-           <span class="wins-count">+ $0.00</span>
+           <span class="wins-count" id="wins-total">+ $0.00</span>
           </div>
 
           <table id="tradeHistoryTable">
@@ -2570,6 +2570,33 @@
 
       var pendingProposalReqId = null;
       var pendingBuyReqId = null;
+      var openContractSubs = {}; // req_id -> { contractId, applied }
+
+      var totalWins = 0;
+      var totalLosses = 0;
+      var winsEl = document.getElementById('wins-total');
+      var lossesEl = document.getElementById('losses-total');
+
+      function applyPnL(profit) {
+        if (profit > 0) {
+          totalWins += profit;
+          if (winsEl) winsEl.textContent = '+ $' + totalWins.toFixed(2);
+        } else if (profit < 0) {
+          totalLosses += Math.abs(profit);
+          if (lossesEl) lossesEl.textContent = '- $' + totalLosses.toFixed(2);
+        }
+      }
+
+      function subscribeToContract(contractId) {
+        var reqId = Date.now() + 2;
+        openContractSubs[reqId] = { contractId: contractId, applied: false };
+        window.DerivConnection.send({
+          proposal_open_contract: 1,
+          contract_id: contractId,
+          subscribe: 1,
+          req_id: reqId
+        });
+      }
 
       function ensureToast() {
         var el = document.getElementById('trade-toast');
@@ -2680,6 +2707,25 @@
           }
           if (data.msg_type === 'buy' && data.buy) {
             showToast('Trade placed \u2014 contract #' + data.buy.contract_id + ' at ' + data.buy.buy_price, false);
+            subscribeToContract(data.buy.contract_id);
+          }
+          return;
+        }
+
+        var sub = openContractSubs[data.req_id];
+        if (sub && !sub.applied && data.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
+          var poc = data.proposal_open_contract;
+          if (poc.is_sold) {
+            sub.applied = true;
+            applyPnL(poc.profit);
+            showToast(
+              'Contract #' + poc.contract_id + ' settled: ' +
+              (poc.profit >= 0 ? '+' : '-') + '$' + Math.abs(poc.profit).toFixed(2),
+              poc.profit < 0
+            );
+            if (data.subscription && data.subscription.id) {
+              window.DerivConnection.send({ forget: data.subscription.id });
+            }
           }
         }
       }
