@@ -2454,27 +2454,31 @@
         var data;
         try { data = JSON.parse(event.data); } catch (e) { return; }
 
+        if (data.error) {
+          console.error('Deriv API error:', data.error.code, data.error.message);
+          balanceEl.textContent = 'Err: ' + data.error.code;
+          return;
+        }
+
         if (data.msg_type === 'authorize') {
-          if (data.error) {
-            console.error('Deriv authorize failed:', data.error.message);
-            balanceEl.textContent = 'Error';
-            return;
-          }
           ws.send(JSON.stringify({ balance: 1, subscribe: 1 }));
         }
 
         if (data.msg_type === 'balance' && data.balance) {
           balanceEl.textContent = formatBalance(data.balance.balance, data.balance.currency);
         }
-
-        if (data.error) {
-          console.error('Deriv API error:', data.error.message);
-        }
       };
 
       ws.onerror = function (err) {
         console.error('Deriv WebSocket error:', err);
-        balanceEl.textContent = 'Error';
+        balanceEl.textContent = 'WS error';
+      };
+
+      ws.onclose = function (ev) {
+        console.error('Deriv WebSocket closed:', ev.code, ev.reason);
+        if (balanceEl.textContent === '$ 0.00' || balanceEl.textContent.indexOf('$') === 0) {
+          balanceEl.textContent = 'Closed: ' + ev.code;
+        }
       };
     })();
   </script>
