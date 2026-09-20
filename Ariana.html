@@ -2420,14 +2420,14 @@
     })();
   </script>
   <script>
-    /* -- Live Deriv account balance (Options REST + WebSocket / OTP flow) --
+    /* -- Shared Deriv connection (Options REST + WebSocket / OTP flow) --
        Reads the OAuth access token saved by callback.html, fetches the
        user's accounts via REST, requests an authenticated WebSocket URL
-       (OTP) for the demo account, then subscribes to live balance. */
+       (OTP), then keeps ONE connection open that both the balance display
+       and trade execution share, via window.DerivConnection. */
     (function () {
       var API_BASE = 'https://api.derivws.com';
       var balanceEl = document.getElementById('balance-value');
-      if (!balanceEl) return;
 
       var CURRENCY_SYMBOLS = { USD: '$', EUR: '\u20ac', GBP: '\u00a3', AUD: 'A$' };
 
@@ -2439,9 +2439,25 @@
         });
       }
 
-      function showError(label) {
-        balanceEl.textContent = label;
+      function showBalanceError(label) {
+        if (balanceEl) balanceEl.textContent = label;
       }
+
+      window.DerivConnection = {
+        ws: null,
+        ready: false,
+        currency: 'USD',
+        listeners: [],
+        onMessage: function (fn) { this.listeners.push(fn); },
+        send: function (payload) {
+          if (this.ws && this.ready) {
+            this.ws.send(JSON.stringify(payload));
+            return true;
+          }
+          console.error('Deriv connection not ready yet.');
+          return false;
+        }
+      };
 
       var token = sessionStorage.getItem('deriv_access_token');
       if (!token) {
@@ -2489,8 +2505,10 @@
 
           // Step 3: connect using the already-authenticated URL and subscribe to balance
           var ws = new WebSocket(wsUrl);
+          window.DerivConnection.ws = ws;
 
           ws.onopen = function () {
+            window.DerivConnection.ready = true;
             ws.send(JSON.stringify({ balance: 1, subscribe: 1, req_id: 1 }));
           };
 
@@ -2498,14 +2516,20 @@
             var data;
             try { data = JSON.parse(event.data); } catch (e) { return; }
 
-            if (data.error) {
+            // Hand every message to any other listeners (e.g. trade execution) first.
+            window.DerivConnection.listeners.forEach(function (fn) {
+              try { fn(data); } catch (e) { console.error('Listener error:', e); }
+            });
+
+            if (data.error && data.req_id === 1) {
               console.error('Deriv API error:', data.error.code, data.error.message);
-              showError('Err: ' + data.error.code);
+              showBalanceError('Err: ' + data.error.code);
               return;
             }
 
             if (data.msg_type === 'balance' && data.balance) {
-              balanceEl.textContent = formatBalance(data.balance.balance, data.balance.currency);
+              window.DerivConnection.currency = data.balance.currency;
+              if (balanceEl) balanceEl.textContent = formatBalance(data.balance.balance, data.balance.currency);
             }
           };
 
@@ -2515,12 +2539,157 @@
 
           ws.onclose = function (ev) {
             console.error('Options WebSocket closed:', ev.code, ev.reason);
+            window.DerivConnection.ready = false;
           };
         })
         .catch(function (err) {
-          console.error('Balance setup failed:', err.message);
-          showError('Error: ' + err.message);
+          console.error('Connection setup failed:', err.message);
+          showBalanceError('Error: ' + err.message);
         });
+    })();
+  </script>
+  <script>
+    /* -- Single trade on Power toggle --
+       Digit Differs, barrier 5, duration 1 tick, on whichever synthetic
+       index is currently selected in the modal picker, at the stake
+       entered in Min Lot Size. Fires once each time the toggle is
+       switched ON (not on switching off). */
+    (function () {
+      var SYMBOL_MAP = {
+        'Volatility 10': 'R_10',
+        'Volatility 25': 'R_25',
+        'Volatility 50': 'R_50',
+        'Volatility 75': 'R_75',
+        'Volatility 100': 'R_100',
+        'Volatility 10 (1s)': '1HZ10V',
+        'Volatility 25 (1s)': '1HZ25V',
+        'Volatility 50 (1s)': '1HZ50V',
+        'Volatility 75 (1s)': '1HZ75V',
+        'Volatility 100 (1s)': '1HZ100V'
+      };
+
+      var pendingProposalReqId = null;
+      var pendingBuyReqId = null;
+
+      function ensureToast() {
+        var el = document.getElementById('trade-toast');
+        if (el) return el;
+        el = document.createElement('div');
+        el.id = 'trade-toast';
+        el.style.cssText = [
+          'position:fixed', 'left:50%', 'bottom:28px', 'transform:translateX(-50%)',
+          'max-width:88vw', 'padding:12px 18px', 'border-radius:12px',
+          'font:600 13px/1.4 -apple-system,sans-serif', 'z-index:99999',
+          'background:rgba(10,14,24,0.95)', 'border:1px solid rgba(0,240,255,0.4)',
+          'color:#e8f9ff', 'box-shadow:0 8px 24px rgba(0,0,0,0.5)',
+          'transition:opacity 0.25s ease', 'opacity:0', 'pointer-events:none',
+          'text-align:center'
+        ].join(';');
+        document.body.appendChild(el);
+        return el;
+      }
+
+      function showToast(message, isError) {
+        var el = ensureToast();
+        el.textContent = message;
+        el.style.borderColor = isError ? 'rgba(255,70,90,0.6)' : 'rgba(0,240,255,0.4)';
+        el.style.color = isError ? '#ffd8dd' : '#e8f9ff';
+        el.style.opacity = '1';
+        clearTimeout(el._hideTimer);
+        el._hideTimer = setTimeout(function () { el.style.opacity = '0'; }, 4500);
+      }
+
+      function getSelectedSymbol() {
+        var label = (window.modalData && modalData.index && modalData.index.selected) || 'Volatility 75';
+        return { label: label, symbol: SYMBOL_MAP[label] };
+      }
+
+      function getStake() {
+        var input = document.getElementById('min-lot-input');
+        var val = parseFloat(input && input.value);
+        if (!val || isNaN(val) || val < 0.35) val = 0.35;
+        return val;
+      }
+
+      function placeSingleTrade() {
+        var picked = getSelectedSymbol();
+        if (!picked.symbol) {
+          showToast('Unknown synthetic index: ' + picked.label, true);
+          return;
+        }
+
+        var stake = getStake();
+        var currency = (window.DerivConnection && window.DerivConnection.currency) || 'USD';
+        var reqId = Date.now();
+        pendingProposalReqId = reqId;
+
+        var sent = window.DerivConnection.send({
+          proposal: 1,
+          amount: stake,
+          basis: 'stake',
+          contract_type: 'DIGITDIFF',
+          currency: currency,
+          duration: 1,
+          duration_unit: 't',
+          barrier: '5',
+          symbol: picked.symbol,
+          req_id: reqId
+        });
+
+        if (sent) {
+          showToast('Placing trade: Digit \u2260 5, 1 tick, ' + picked.label + ', stake ' + stake, false);
+        } else {
+          pendingProposalReqId = null;
+          showToast('Not connected to Deriv yet \u2014 try again in a moment.', true);
+        }
+      }
+
+      if (window.DerivConnection) {
+        window.DerivConnection.onMessage(handleTradeMessage);
+      } else {
+        // Connection script runs before this one, but guard just in case.
+        document.addEventListener('DOMContentLoaded', function () {
+          if (window.DerivConnection) window.DerivConnection.onMessage(handleTradeMessage);
+        });
+      }
+
+      function handleTradeMessage(data) {
+        if (pendingProposalReqId && data.req_id === pendingProposalReqId) {
+          pendingProposalReqId = null;
+          if (data.error) {
+            showToast('Trade failed: ' + data.error.message, true);
+            return;
+          }
+          if (data.msg_type === 'proposal' && data.proposal) {
+            var buyReqId = Date.now() + 1;
+            pendingBuyReqId = buyReqId;
+            window.DerivConnection.send({
+              buy: data.proposal.id,
+              price: data.proposal.ask_price,
+              req_id: buyReqId
+            });
+          }
+          return;
+        }
+
+        if (pendingBuyReqId && data.req_id === pendingBuyReqId) {
+          pendingBuyReqId = null;
+          if (data.error) {
+            showToast('Trade failed: ' + data.error.message, true);
+            return;
+          }
+          if (data.msg_type === 'buy' && data.buy) {
+            showToast('Trade placed \u2014 contract #' + data.buy.contract_id + ' at ' + data.buy.buy_price, false);
+          }
+        }
+      }
+
+      var power = document.getElementById('holo-toggle');
+      if (power) {
+        power.addEventListener('change', function () {
+          if (power.checked) placeSingleTrade();
+        });
+      }
     })();
   </script>
 </body>
