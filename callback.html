@@ -75,7 +75,7 @@
     spinner.style.display = 'none';
     title.textContent = 'Connected!';
     message.textContent = 'Redirecting you back to the app…';
-    setTimeout(function(){ window.location.href = '/'; }, 1200);
+    setTimeout(function(){ window.location.href = '/Ariana.html'; }, 1200);
   }
 
   var params = new URLSearchParams(window.location.search);
@@ -119,7 +119,11 @@
     })
   })
   .then(function(res){
-    if (!res.ok){ throw new Error('Token exchange failed (' + res.status + ')'); }
+    if (!res.ok){
+      return res.text().then(function(text){
+        throw new Error('Token exchange failed (HTTP ' + res.status + '): ' + text);
+      });
+    }
     return res.json();
   })
   .then(function(data){
@@ -138,7 +142,7 @@
   })
   .catch(function(err){
     console.error(err);
-    showError('Could not complete login. Please try again.');
+    showError(err && err.message ? err.message : 'Could not complete login. Please try again.');
   });
 })();
 </script>
