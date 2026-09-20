@@ -2571,8 +2571,59 @@
       var pendingProposalReqId = null;
       var pendingBuyReqId = null;
       var openContractSubs = {}; // req_id -> { contractId, applied }
+      var tradeMeta = {}; // req_id (whichever stage is currently pending) -> { indexLabel, stake }
       var reqIdCounter = 100; // balance stream owns req_id 1, so start well clear of it
       function nextReqId() { reqIdCounter += 1; return reqIdCounter; }
+
+      var tradeBody = document.getElementById('trade-body');
+      var noTradesRow = document.getElementById('no-trades-row');
+
+      function addTradeRow(indexLabel, contractLabel, stake, profit) {
+        if (!tradeBody) return;
+        if (noTradesRow) { noTradesRow.remove(); noTradesRow = null; }
+
+        var isWin = profit >= 0;
+        var tr = document.createElement('tr');
+        var tdIndex = document.createElement('td');
+        tdIndex.textContent = indexLabel;
+        var tdContract = document.createElement('td');
+        tdContract.textContent = contractLabel;
+        var tdStake = document.createElement('td');
+        tdStake.textContent = '$' + Number(stake).toFixed(2);
+        var tdPL = document.createElement('td');
+        tdPL.textContent = (isWin ? '+' : '-') + '$' + Math.abs(profit).toFixed(2);
+        tdPL.style.color = isWin ? '#3adf8a' : '#ff4a5e';
+        tdPL.style.fontWeight = '700';
+        var tdTime = document.createElement('td');
+        tdTime.className = 'trade-time';
+        tdTime.dataset.ts = String(Date.now());
+        tdTime.textContent = 'just now';
+
+        tr.appendChild(tdIndex);
+        tr.appendChild(tdContract);
+        tr.appendChild(tdStake);
+        tr.appendChild(tdPL);
+        tr.appendChild(tdTime);
+
+        tradeBody.insertBefore(tr, tradeBody.firstChild); // newest trade on top, no delay
+      }
+
+      function formatAgo(seconds) {
+        if (seconds < 1) return 'just now';
+        if (seconds < 60) return seconds + 's ago';
+        if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+        return Math.floor(seconds / 3600) + 'h ago';
+      }
+
+      setInterval(function () {
+        if (!tradeBody) return;
+        var cells = tradeBody.querySelectorAll('.trade-time');
+        for (var i = 0; i < cells.length; i++) {
+          var ts = Number(cells[i].dataset.ts);
+          if (!ts) continue;
+          cells[i].textContent = formatAgo(Math.floor((Date.now() - ts) / 1000));
+        }
+      }, 1000);
 
       var totalWins = 0;
       var totalLosses = 0;
@@ -2598,6 +2649,7 @@
           subscribe: 1,
           req_id: reqId
         });
+        return reqId;
       }
 
       function showToast(message, isError) {
@@ -2628,6 +2680,7 @@
         var currency = (window.DerivConnection && window.DerivConnection.currency) || 'USD';
         var reqId = nextReqId();
         pendingProposalReqId = reqId;
+        tradeMeta[reqId] = { indexLabel: picked.label, stake: stake };
 
         var sent = window.DerivConnection.send({
           proposal: 1,
@@ -2661,6 +2714,8 @@
 
       function handleTradeMessage(data) {
         if (pendingProposalReqId && data.req_id === pendingProposalReqId) {
+          var meta = tradeMeta[pendingProposalReqId];
+          delete tradeMeta[pendingProposalReqId];
           pendingProposalReqId = null;
           if (data.error) {
             showToast('Trade failed: ' + data.error.message, true);
@@ -2669,6 +2724,7 @@
           if (data.msg_type === 'proposal' && data.proposal) {
             var buyReqId = nextReqId();
             pendingBuyReqId = buyReqId;
+            if (meta) tradeMeta[buyReqId] = meta;
             window.DerivConnection.send({
               buy: data.proposal.id,
               price: data.proposal.ask_price,
@@ -2679,6 +2735,8 @@
         }
 
         if (pendingBuyReqId && data.req_id === pendingBuyReqId) {
+          var buyMeta = tradeMeta[pendingBuyReqId];
+          delete tradeMeta[pendingBuyReqId];
           pendingBuyReqId = null;
           if (data.error) {
             showToast('Trade failed: ' + data.error.message, true);
@@ -2686,7 +2744,8 @@
           }
           if (data.msg_type === 'buy' && data.buy) {
             showToast('Trade placed \u2014 contract #' + data.buy.contract_id + ' at ' + data.buy.buy_price, false);
-            subscribeToContract(data.buy.contract_id);
+            var subReqId = subscribeToContract(data.buy.contract_id);
+            if (buyMeta) tradeMeta[subReqId] = buyMeta;
           }
           return;
         }
@@ -2698,6 +2757,16 @@
             sub.applied = true;
             var profitNum = Number(poc.profit);
             applyPnL(profitNum);
+
+            var rowMeta = tradeMeta[data.req_id];
+            delete tradeMeta[data.req_id];
+            addTradeRow(
+              (rowMeta && rowMeta.indexLabel) || '\u2014',
+              'Digit \u2260 5',
+              (rowMeta && rowMeta.stake) || 0,
+              profitNum
+            );
+
             showToast(
               'Contract #' + poc.contract_id + ' settled: ' +
               (profitNum >= 0 ? '+' : '-') + '$' + Math.abs(profitNum).toFixed(2),
