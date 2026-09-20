@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Connecting to Deriv…</title>
+<style>
+  :root{ box-sizing:border-box; }
+  *{ box-sizing:inherit; margin:0; padding:0; }
+  body{
+    font-family:-apple-system, 'Inter', sans-serif;
+    background:#05030c;
+    color:#f3eefc;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    text-align:center;
+  }
+  .box{ max-width:420px; }
+  h1{ font-size:20px; margin-bottom:12px; font-weight:700; }
+  p{ color:#a996d6; font-size:14px; line-height:1.5; }
+  .spinner{
+    width:36px; height:36px;
+    border:3px solid #3a2a63;
+    border-top-color:#3ad4ff;
+    border-radius:50%;
+    margin:0 auto 20px;
+    animation:spin 0.8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  h1.error{ color:#ff3b57; }
+  a.btn{
+    display:inline-block;
+    margin-top:18px;
+    padding:10px 22px;
+    background:#160f2e;
+    border:1px solid #3ad4ff;
+    color:#d8f6ff;
+    border-radius:10px;
+    text-decoration:none;
+    font-weight:600;
+  }
+</style>
+</head>
+<body>
+
+<div class="box" id="box">
+  <div class="spinner" id="spinner"></div>
+  <h1 id="title">Connecting your Deriv account…</h1>
+  <p id="message">Please wait while we finish signing you in.</p>
+</div>
+
+<script>
+(function(){
+  var box = document.getElementById('box');
+  var spinner = document.getElementById('spinner');
+  var title = document.getElementById('title');
+  var message = document.getElementById('message');
+
+  function showError(msg){
+    spinner.style.display = 'none';
+    title.textContent = 'Login failed';
+    title.className = 'error';
+    message.textContent = msg;
+    var link = document.createElement('a');
+    link.className = 'btn';
+    link.href = '/';
+    link.textContent = 'Back to app';
+    box.appendChild(link);
+  }
+
+  function showSuccess(){
+    spinner.style.display = 'none';
+    title.textContent = 'Connected!';
+    message.textContent = 'Redirecting you back to the app…';
+    setTimeout(function(){ window.location.href = '/'; }, 1200);
+  }
+
+  var params = new URLSearchParams(window.location.search);
+  var error = params.get('error');
+  var code = params.get('code');
+  var state = params.get('state');
+
+  if (error){
+    showError(params.get('error_description') || error);
+    return;
+  }
+
+  if (!code || !state){
+    showError('Missing authorization code from Deriv.');
+    return;
+  }
+
+  var storedState = sessionStorage.getItem('deriv_oauth_state');
+  var codeVerifier = sessionStorage.getItem('deriv_code_verifier');
+
+  if (!storedState || state !== storedState){
+    showError('Security check failed (state mismatch). Please try logging in again.');
+    return;
+  }
+
+  if (!codeVerifier){
+    showError('Your login session expired. Please try logging in again.');
+    return;
+  }
+
+  // The actual code-for-token exchange must happen server-side (Deriv's own
+  // docs are explicit about this), so we hand it off to a Netlify Function
+  // rather than calling Deriv's token endpoint directly from this page.
+  fetch('/.netlify/functions/deriv-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code: code,
+      code_verifier: codeVerifier,
+      redirect_uri: window.location.origin + '/callback'
+    })
+  })
+  .then(function(res){
+    if (!res.ok){ throw new Error('Token exchange failed (' + res.status + ')'); }
+    return res.json();
+  })
+  .then(function(data){
+    sessionStorage.removeItem('deriv_oauth_state');
+    sessionStorage.removeItem('deriv_code_verifier');
+
+    if (data.access_token){
+      // sessionStorage is the simplest place to hand the token to the rest
+      // of the app. For a production trading tool, consider having the
+      // function set it as a short-lived, httpOnly cookie instead.
+      sessionStorage.setItem('deriv_access_token', data.access_token);
+      showSuccess();
+    } else {
+      showError('No access token returned.');
+    }
+  })
+  .catch(function(err){
+    console.error(err);
+    showError('Could not complete login. Please try again.');
+  });
+})();
+</script>
+</body>
+</html>
