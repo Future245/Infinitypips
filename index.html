@@ -672,7 +672,7 @@
               setEmailStatus('Could not add email \u2014 try again', true);
               return;
             }
-            localStorage.setItem('client_port_email', email);
+            sessionStorage.setItem('client_port_email', email);
             setEmailStatus('Email added', false);
             setTimeout(function(){ showOnly(viewHome); }, 900);
           })
@@ -763,7 +763,7 @@
 
     if (loginBtn){
       loginBtn.addEventListener('click', function(){
-        var email = localStorage.getItem('client_port_email');
+        var email = sessionStorage.getItem('client_port_email');
 
         if (!email){
           setDerivError('Add your email in Client Port first');
