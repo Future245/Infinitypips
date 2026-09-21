@@ -2568,12 +2568,25 @@
         'Volatility 100 (1s)': '1HZ100V'
       };
 
-      var pendingProposalReqId = null;
-      var pendingBuyReqId = null;
+      var pendingProposals = {}; // req_id -> true (supports many trades in flight at once)
+      var pendingBuys = {};      // req_id -> true
       var openContractSubs = {}; // req_id -> { contractId, applied }
       var tradeMeta = {}; // req_id (whichever stage is currently pending) -> { indexLabel, stake }
       var reqIdCounter = 100; // balance stream owns req_id 1, so start well clear of it
       function nextReqId() { reqIdCounter += 1; return reqIdCounter; }
+
+      var SHORT_INDEX_LABEL = {
+        'Volatility 10': 'V_10',
+        'Volatility 25': 'V_25',
+        'Volatility 50': 'V_50',
+        'Volatility 75': 'V_75',
+        'Volatility 100': 'V_100',
+        'Volatility 10 (1s)': 'V_10s',
+        'Volatility 25 (1s)': 'V_25s',
+        'Volatility 50 (1s)': 'V_50s',
+        'Volatility 75 (1s)': 'V_75s',
+        'Volatility 100 (1s)': 'V_100s'
+      };
 
       var tradeBody = document.getElementById('trade-body');
       var noTradesRow = document.getElementById('no-trades-row');
@@ -2679,7 +2692,7 @@
         var stake = getStake();
         var currency = (window.DerivConnection && window.DerivConnection.currency) || 'USD';
         var reqId = nextReqId();
-        pendingProposalReqId = reqId;
+        pendingProposals[reqId] = true;
         tradeMeta[reqId] = { indexLabel: picked.label, stake: stake };
 
         var sent = window.DerivConnection.send({
@@ -2695,10 +2708,9 @@
           req_id: reqId
         });
 
-        if (sent) {
-          showToast('Placing trade: Digit \u2260 5, 1 tick, ' + picked.label + ', stake ' + stake, false);
-        } else {
-          pendingProposalReqId = null;
+        if (!sent) {
+          delete pendingProposals[reqId];
+          delete tradeMeta[reqId];
           showToast('Not connected to Deriv yet \u2014 try again in a moment.', true);
         }
       }
@@ -2713,17 +2725,17 @@
       }
 
       function handleTradeMessage(data) {
-        if (pendingProposalReqId && data.req_id === pendingProposalReqId) {
-          var meta = tradeMeta[pendingProposalReqId];
-          delete tradeMeta[pendingProposalReqId];
-          pendingProposalReqId = null;
+        if (pendingProposals[data.req_id]) {
+          delete pendingProposals[data.req_id];
+          var meta = tradeMeta[data.req_id];
+          delete tradeMeta[data.req_id];
           if (data.error) {
             showToast('Trade failed: ' + data.error.message, true);
             return;
           }
           if (data.msg_type === 'proposal' && data.proposal) {
             var buyReqId = nextReqId();
-            pendingBuyReqId = buyReqId;
+            pendingBuys[buyReqId] = true;
             if (meta) tradeMeta[buyReqId] = meta;
             window.DerivConnection.send({
               buy: data.proposal.id,
@@ -2734,10 +2746,10 @@
           return;
         }
 
-        if (pendingBuyReqId && data.req_id === pendingBuyReqId) {
-          var buyMeta = tradeMeta[pendingBuyReqId];
-          delete tradeMeta[pendingBuyReqId];
-          pendingBuyReqId = null;
+        if (pendingBuys[data.req_id]) {
+          delete pendingBuys[data.req_id];
+          var buyMeta = tradeMeta[data.req_id];
+          delete tradeMeta[data.req_id];
           if (data.error) {
             showToast('Trade failed: ' + data.error.message, true);
             return;
@@ -2761,7 +2773,7 @@
             var rowMeta = tradeMeta[data.req_id];
             delete tradeMeta[data.req_id];
             addTradeRow(
-              (rowMeta && rowMeta.indexLabel) || '\u2014',
+              (rowMeta && SHORT_INDEX_LABEL[rowMeta.indexLabel]) || (rowMeta && rowMeta.indexLabel) || '\u2014',
               'Digit \u2260 5',
               (rowMeta && rowMeta.stake) || 0,
               profitNum
@@ -2780,10 +2792,27 @@
       }
 
 
+      var autoTradeInterval = null;
+
+      function startAutoTrading() {
+        if (autoTradeInterval) return;
+        placeSingleTrade(); // fire immediately, then every 500ms
+        autoTradeInterval = setInterval(placeSingleTrade, 500); // 2 trades/sec
+      }
+
+      function stopAutoTrading() {
+        if (autoTradeInterval) {
+          clearInterval(autoTradeInterval);
+          autoTradeInterval = null;
+        }
+        // Trades already in flight keep running to settlement \u2014 only new ones stop.
+      }
+
       var power = document.getElementById('holo-toggle');
       if (power) {
         power.addEventListener('change', function () {
-          if (power.checked) placeSingleTrade();
+          if (power.checked) startAutoTrading();
+          else stopAutoTrading();
         });
       }
     })();
