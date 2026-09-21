@@ -454,6 +454,10 @@
   .status.connected .ring{
     border-color:#3adf8a; box-shadow:0 0 8px rgba(58,223,138,0.6); background:#3adf8a;
   }
+  .status.error{ color:var(--red); }
+  .status.error .ring{
+    border-color:var(--red); box-shadow:0 0 8px var(--red-glow); background:var(--red);
+  }
 
   .foot{
     position:relative; z-index:1;
@@ -586,6 +590,7 @@
           </svg>
           Add email
         </button>
+        <div class="status" id="emailStatus" hidden><span class="ring"></span></div>
       </div>
     </div>
 
@@ -614,6 +619,8 @@
     var viewClient = document.getElementById('viewClient');
     var serialInput = document.getElementById('serialInput');
     var emailInput = document.getElementById('emailInput');
+    var addEmailBtn = document.getElementById('addEmailBtn');
+    var emailStatus = document.getElementById('emailStatus');
 
     function showOnly(view){
       [viewHome, viewSettings, viewClient].forEach(function(v){ v.hidden = (v !== view); });
@@ -631,6 +638,50 @@
       emailInput.focus();
     });
     backBtn2.addEventListener('click', function(){ showOnly(viewSettings); });
+
+    function setEmailStatus(text, isError){
+      if (!emailStatus) return;
+      emailStatus.hidden = false;
+      emailStatus.innerHTML = '<span class="ring"></span>' + text;
+      emailStatus.classList.toggle('error', !!isError);
+      emailStatus.classList.toggle('connected', !isError);
+    }
+
+    if (addEmailBtn){
+      addEmailBtn.addEventListener('click', function(){
+        var email = (emailInput.value || '').trim().toLowerCase();
+        var validFormat = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+        if (!validFormat){
+          setEmailStatus('Enter a valid email address', true);
+          return;
+        }
+
+        addEmailBtn.disabled = true;
+        setEmailStatus('Adding\u2026', false);
+
+        fetch('/.netlify/functions/client-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'add', email: email })
+        })
+          .then(function(res){ return res.json().then(function(body){ return { ok: res.ok, body: body }; }); })
+          .then(function(result){
+            addEmailBtn.disabled = false;
+            if (!result.ok){
+              setEmailStatus('Could not add email \u2014 try again', true);
+              return;
+            }
+            localStorage.setItem('client_port_email', email);
+            setEmailStatus('Email added', false);
+            setTimeout(function(){ showOnly(viewHome); }, 900);
+          })
+          .catch(function(){
+            addEmailBtn.disabled = false;
+            setEmailStatus('Network error \u2014 try again', true);
+          });
+      });
+    }
   })();
 
   /* ===== Deriv OAuth2 (Authorization Code + PKCE) ===== */
@@ -703,11 +754,45 @@
       window.location.href = DERIV_AUTH_URL + '?' + params.toString();
     }
 
+    function setDerivError(text){
+      if (!derivStatus) return;
+      derivStatus.innerHTML = '<span class="ring"></span>' + text;
+      derivStatus.classList.add('error');
+      derivStatus.classList.remove('connected');
+    }
+
     if (loginBtn){
       loginBtn.addEventListener('click', function(){
-        startDerivLogin().catch(function(err){
-          console.error('Deriv login failed to start:', err);
-        });
+        var email = localStorage.getItem('client_port_email');
+
+        if (!email){
+          setDerivError('Add your email in Client Port first');
+          return;
+        }
+
+        loginBtn.disabled = true;
+
+        fetch('/.netlify/functions/client-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'check', email: email })
+        })
+          .then(function(res){ return res.json(); })
+          .then(function(result){
+            loginBtn.disabled = false;
+            if (!result || !result.authorized){
+              setDerivError('Email not authorized \u2014 add it in Client Port');
+              return;
+            }
+            startDerivLogin().catch(function(err){
+              console.error('Deriv login failed to start:', err);
+              setDerivError('Login failed to start \u2014 try again');
+            });
+          })
+          .catch(function(){
+            loginBtn.disabled = false;
+            setDerivError('Network error \u2014 try again');
+          });
       });
     }
   })();
