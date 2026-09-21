@@ -31,7 +31,18 @@ exports.handler = async function (event) {
 
   let store;
   try {
-    store = getStore('client-emails');
+    // Automatic Blobs context injection isn't working in this environment,
+    // so we supply the site ID and an access token explicitly instead —
+    // both come from Netlify environment variables (Site configuration ->
+    // Environment variables): BLOBS_SITE_ID and BLOBS_TOKEN.
+    // (Deliberately NOT prefixed "NETLIFY_" — that prefix is reserved by
+    // Netlify for its own system variables and custom vars using it don't
+    // reliably reach the function's process.env.)
+    store = getStore({
+      name: 'client-emails',
+      siteID: process.env.BLOBS_SITE_ID,
+      token: process.env.BLOBS_TOKEN
+    });
   } catch (err) {
     console.error('Failed to open Blobs store:', err.message);
     return { statusCode: 500, body: JSON.stringify({ error: 'store_unavailable', message: err.message }) };
