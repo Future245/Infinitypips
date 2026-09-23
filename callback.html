@@ -75,7 +75,10 @@
     spinner.style.display = 'none';
     title.textContent = 'Connected!';
     message.textContent = 'Redirecting you back to the app…';
-    setTimeout(function(){ window.location.href = '/?deriv_connected=1'; }, 1200);
+    var target = sessionStorage.getItem('deriv_post_auth_target') || 'portal';
+    sessionStorage.removeItem('deriv_post_auth_target');
+    var destination = target === 'robot' ? '/Ariana.html' : '/';
+    setTimeout(function(){ window.location.href = destination + '?deriv_connected=1'; }, 1200);
   }
 
   var params = new URLSearchParams(window.location.search);
