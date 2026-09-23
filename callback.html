@@ -75,7 +75,7 @@
     spinner.style.display = 'none';
     title.textContent = 'Connected!';
     message.textContent = 'Redirecting you back to the app…';
-    setTimeout(function(){ window.location.href = '/Ariana.html'; }, 1200);
+    setTimeout(function(){ window.location.href = '/?deriv_connected=1'; }, 1200);
   }
 
   var params = new URLSearchParams(window.location.search);
