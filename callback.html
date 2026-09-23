@@ -130,6 +130,8 @@
     if (!result.ok){
       if (result.status === 403 && result.data && result.data.error === 'not_authorized'){
         showError('This Deriv account is not authorized to use this app.');
+      } else if (result.status === 409 && result.data && result.data.error === 'account_conflict'){
+        showError('This Deriv account is already linked to a different account here. Please use the account you originally connected with.');
       } else if (result.data && result.data.message){
         showError(result.data.message);
       } else {
