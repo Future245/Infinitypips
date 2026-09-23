@@ -2,6 +2,6 @@
   "name": "infinitypips",
   "private": true,
   "dependencies": {
-    "@netlify/blobs": "^8.1.0"
+    "pg": "^8.13.0"
   }
 }
