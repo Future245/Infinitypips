@@ -119,22 +119,31 @@
     })
   })
   .then(function(res){
-    if (!res.ok){
-      return res.text().then(function(text){
-        throw new Error('Token exchange failed (HTTP ' + res.status + '): ' + text);
-      });
-    }
-    return res.json();
+    return res.json().catch(function(){ return {}; }).then(function(data){
+      return { ok: res.ok, status: res.status, data: data };
+    });
   })
-  .then(function(data){
+  .then(function(result){
     sessionStorage.removeItem('deriv_oauth_state');
     sessionStorage.removeItem('deriv_code_verifier');
 
-    if (data.access_token){
+    if (!result.ok){
+      if (result.status === 403 && result.data && result.data.error === 'not_authorized'){
+        showError('This Deriv account is not authorized to use this app.');
+      } else if (result.data && result.data.message){
+        showError(result.data.message);
+      } else {
+        showError('Could not complete login (HTTP ' + result.status + '). Please try again.');
+      }
+      return;
+    }
+
+    if (result.data.access_token){
       // sessionStorage is the simplest place to hand the token to the rest
       // of the app. For a production trading tool, consider having the
       // function set it as a short-lived, httpOnly cookie instead.
-      sessionStorage.setItem('deriv_access_token', data.access_token);
+      sessionStorage.setItem('deriv_access_token', result.data.access_token);
+      if (result.data.loginid){ sessionStorage.setItem('deriv_loginid', result.data.loginid); }
       showSuccess();
     } else {
       showError('No access token returned.');
