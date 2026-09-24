@@ -1,16 +1,17 @@
-// netlify/functions/deriv-token.js
+   // netlify/functions/deriv-token.js
 //
 // Runs server-side on Netlify (never in the browser). Deriv's own docs
 // require the authorization code to be exchanged for a token from a
 // backend, so this function is that backend.
 //
 // After exchanging the code, this function identifies the real,
-// authenticated Deriv login ID (e.g. "CR123456") via Deriv's own API —
-// never from anything the browser supplies. That verified identity is then
-// AUTOMATICALLY linked to an app_user in Postgres (Neon): first connection
-// auto-creates the link, later connections recognize it, and a Deriv
-// identity already linked to a different app_user is rejected rather than
-// silently reassigned. Nothing here needs manual SQL after deploying.
+// authenticated Deriv account (its account_id, e.g. "DOT90004580") via
+// Deriv's own API — never from anything the browser supplies. That
+// verified identity is then AUTOMATICALLY linked to an app_user in
+// Postgres (Neon): first connection auto-creates the link, later
+// connections recognize it, and a Deriv identity already linked to a
+// different app_user is rejected rather than silently reassigned. Nothing
+// here needs manual SQL after deploying.
 //
 // Environment variables required:
 //   DERIV_CLIENT_ID  - your Deriv App ID
@@ -20,7 +21,7 @@ const { Client } = require('pg');
 const crypto = require('crypto');
 
 const DERIV_TOKEN_URL = 'https://auth.deriv.com/oauth2/token';
-const LEGACY_ACCOUNTS_URL = 'https://api.derivws.com/trading/v1/options/legacy/accounts';
+const ACCOUNTS_URL = 'https://api.derivws.com/trading/v1/options/accounts';
 
 const SESSION_COOKIE = 'app_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -35,11 +36,11 @@ function parseCookies(header) {
   return out;
 }
 
-// Prefer the real-money (CR-prefixed) account as the canonical identity for
-// this Deriv login; fall back to whatever the first account is (e.g. a
-// virtual/demo-only login) if no CR account is present.
-function pickCanonicalLoginid(loginids) {
-  return loginids.find(function (id) { return /^CR/i.test(id); }) || loginids[0];
+// Prefer the real-money account as the canonical identity for this Deriv
+// login; fall back to a demo account if the user has no real account yet.
+function pickCanonicalAccount(accounts) {
+  var real = accounts.find(function (a) { return a.account_type === 'real'; });
+  return (real || accounts[0]).account_id;
 }
 
 exports.handler = async function (event) {
@@ -104,31 +105,31 @@ exports.handler = async function (event) {
   }
 
   // --- Identify the real, authenticated Deriv account server-side ---
-  let loginids;
+  let accounts;
   try {
-    const acctResponse = await fetch(LEGACY_ACCOUNTS_URL, {
+    const acctResponse = await fetch(ACCOUNTS_URL, {
       headers: { 'Authorization': 'Bearer ' + accessToken, 'Deriv-App-ID': DERIV_CLIENT_ID }
     });
     const acctData = await acctResponse.json();
-    console.log('legacy/accounts responded:', acctResponse.status);
+    console.log('accounts endpoint responded:', acctResponse.status);
 
     if (!acctResponse.ok) {
       return { statusCode: 502, body: JSON.stringify({ error: 'account_lookup_failed', message: 'Could not identify the Deriv account.' }) };
     }
 
-    const source = acctData.loginids || (acctData.data && acctData.data.loginids) || acctData.data || acctData;
-    loginids = Object.keys(source || {});
+    accounts = acctData.data || [];
   } catch (err) {
     console.error('Failed to identify Deriv account:', err.message);
     return { statusCode: 502, body: JSON.stringify({ error: 'account_lookup_failed', message: err.message }) };
   }
 
-  if (!loginids || loginids.length === 0) {
-    console.error('No loginid found for this token.');
+  if (!accounts.length) {
+    console.error('No accounts found for this token.');
     return { statusCode: 403, body: JSON.stringify({ error: 'no_account_found', message: 'Could not identify a Deriv account for this login.' }) };
   }
 
-  const canonicalLoginid = pickCanonicalLoginid(loginids);
+  const canonicalLoginid = pickCanonicalAccount(accounts);
+  const loginids = accounts.map(function (a) { return a.account_id; });
   const cookies = parseCookies(event.headers && (event.headers.cookie || event.headers.Cookie));
   const incomingSessionToken = cookies[SESSION_COOKIE];
 
