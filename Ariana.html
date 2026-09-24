@@ -2671,7 +2671,7 @@
       }
 
       function getSelectedSymbol() {
-        var label = (window.modalData && modalData.index && modalData.index.selected) || 'Volatility 75';
+        var label = (typeof modalData !== 'undefined' && modalData.index && modalData.index.selected) || 'Volatility 75';
         return { label: label, symbol: SYMBOL_MAP[label] };
       }
 
