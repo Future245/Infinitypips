@@ -2549,11 +2549,16 @@
     })();
   </script>
   <script>
-    /* -- Single trade on Power toggle --
+    /* -- Continuous auto-trading on Power toggle --
        Digit Differs, barrier 5, duration 1 tick, on whichever synthetic
        index is currently selected in the modal picker, at the stake
-       entered in Min Lot Size. Fires once each time the toggle is
-       switched ON (not on switching off). */
+       entered in Min Lot Size. Fires repeatedly on a timer while the
+       toggle is ON, paced to stay under Deriv's shared rate budget for
+       proposal/buy calls (360/min). Settlement is read back via periodic
+       profit_table polls (a separate, much smaller budget) instead of a
+       per-contract proposal_open_contract subscription, so each trade
+       only spends 2 calls (proposal + buy) against the 360/min budget
+       instead of 3 — allowing a higher sustained trade rate. */
     (function () {
       var SYMBOL_MAP = {
         'Volatility 10': 'R_10',
@@ -2570,7 +2575,8 @@
 
       var pendingProposals = {}; // req_id -> true (supports many trades in flight at once)
       var pendingBuys = {};      // req_id -> true
-      var openContractSubs = {}; // req_id -> { contractId, applied }
+      var pendingSettlements = {}; // contract_id -> { indexLabel, stake } (awaiting profit_table)
+      var pendingProfitTable = {}; // req_id -> true
       var tradeMeta = {}; // req_id (whichever stage is currently pending) -> { indexLabel, stake }
       var reqIdCounter = 100; // balance stream owns req_id 1, so start well clear of it
       function nextReqId() { reqIdCounter += 1; return reqIdCounter; }
@@ -2653,16 +2659,17 @@
         }
       }
 
-      function subscribeToContract(contractId) {
+      function pollProfitTable() {
+        if (!Object.keys(pendingSettlements).length) return; // nothing awaiting settlement
         var reqId = nextReqId();
-        openContractSubs[reqId] = { contractId: contractId, applied: false };
+        pendingProfitTable[reqId] = true;
         window.DerivConnection.send({
-          proposal_open_contract: 1,
-          contract_id: contractId,
-          subscribe: 1,
+          profit_table: 1,
+          description: 1,
+          limit: 50,
+          sort: 'DESC',
           req_id: reqId
         });
-        return reqId;
       }
 
       function showToast(message, isError) {
@@ -2756,48 +2763,67 @@
           }
           if (data.msg_type === 'buy' && data.buy) {
             showToast('Trade placed \u2014 contract #' + data.buy.contract_id + ' at ' + data.buy.buy_price, false);
-            var subReqId = subscribeToContract(data.buy.contract_id);
-            if (buyMeta) tradeMeta[subReqId] = buyMeta;
+            if (buyMeta) pendingSettlements[data.buy.contract_id] = buyMeta;
           }
           return;
         }
 
-        var sub = openContractSubs[data.req_id];
-        if (sub && !sub.applied && data.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
-          var poc = data.proposal_open_contract;
-          if (poc.is_sold) {
-            sub.applied = true;
-            var profitNum = Number(poc.profit);
-            applyPnL(profitNum);
+        if (pendingProfitTable[data.req_id]) {
+          delete pendingProfitTable[data.req_id];
+          if (data.error) {
+            showToast('profit_table poll failed: ' + data.error.message, true);
+            return;
+          }
+          if (data.msg_type === 'profit_table' && data.profit_table && data.profit_table.transactions) {
+            data.profit_table.transactions.forEach(function (txn) {
+              var contractId = txn.contract_id;
+              var rowMeta = pendingSettlements[contractId];
+              if (!rowMeta) return; // not one of ours, or already settled
+              if (txn.sell_price === undefined || txn.sell_price === null) return; // not sold yet
 
-            var rowMeta = tradeMeta[data.req_id];
-            delete tradeMeta[data.req_id];
-            addTradeRow(
-              (rowMeta && SHORT_INDEX_LABEL[rowMeta.indexLabel]) || (rowMeta && rowMeta.indexLabel) || '\u2014',
-              'Digit \u2260 5',
-              (rowMeta && rowMeta.stake) || 0,
-              profitNum
-            );
-
-            showToast(
-              'Contract #' + poc.contract_id + ' settled: ' +
-              (profitNum >= 0 ? '+' : '-') + '$' + Math.abs(profitNum).toFixed(2),
-              profitNum < 0
-            );
-            if (data.subscription && data.subscription.id) {
-              window.DerivConnection.send({ forget: data.subscription.id });
-            }
+              delete pendingSettlements[contractId];
+              var profitNum = Number(txn.sell_price) - Number(txn.buy_price);
+              applyPnL(profitNum);
+              addTradeRow(
+                SHORT_INDEX_LABEL[rowMeta.indexLabel] || rowMeta.indexLabel || '\u2014',
+                'Digit \u2260 5',
+                rowMeta.stake || 0,
+                profitNum
+              );
+              showToast(
+                'Contract #' + contractId + ' settled: ' +
+                (profitNum >= 0 ? '+' : '-') + '$' + Math.abs(profitNum).toFixed(2),
+                profitNum < 0
+              );
+            });
           }
         }
       }
 
 
       var autoTradeInterval = null;
+      var settlementPollInterval = null;
+
+      // Each trade spends 2 calls (proposal + buy) against Deriv's shared
+      // 360/min budget for proposal/proposal_open_contract/buy/sell.
+      // Target: 6 calls/sec average (360/min) -> 3 trades/sec -> 334ms.
+      // This rides the budget ceiling with ~0 margin: setInterval drift,
+      // network jitter, or any other call sharing this budget can push a
+      // rolling minute over 360 and trigger rejected requests until the
+      // window resets. 334ms (not 333) is intentional headroom against
+      // rounding — 333ms alone nets ~360.4 calls/min, just over the cap.
+      var TRADE_INTERVAL_MS = 334;
+      // profit_table shares a separate, much smaller budget (30/min, shared
+      // with portfolio) — poll well under that.
+      var SETTLEMENT_POLL_MS = 4000;
 
       function startAutoTrading() {
         if (autoTradeInterval) return;
-        placeSingleTrade(); // fire immediately, then every 500ms
-        autoTradeInterval = setInterval(placeSingleTrade, 500); // 2 trades/sec
+        placeSingleTrade(); // fire immediately, then on a steady pace
+        autoTradeInterval = setInterval(placeSingleTrade, TRADE_INTERVAL_MS);
+        if (!settlementPollInterval) {
+          settlementPollInterval = setInterval(pollProfitTable, SETTLEMENT_POLL_MS);
+        }
       }
 
       function stopAutoTrading() {
@@ -2805,7 +2831,18 @@
           clearInterval(autoTradeInterval);
           autoTradeInterval = null;
         }
-        // Trades already in flight keep running to settlement \u2014 only new ones stop.
+        // Trades already in flight keep running to settlement \u2014 only new
+        // ones stop. Keep polling profit_table until everything still
+        // pending has settled, then stop.
+        if (settlementPollInterval) {
+          var checkDone = setInterval(function () {
+            if (Object.keys(pendingSettlements).length === 0 && !autoTradeInterval) {
+              clearInterval(settlementPollInterval);
+              settlementPollInterval = null;
+              clearInterval(checkDone);
+            }
+          }, SETTLEMENT_POLL_MS);
+        }
       }
 
       var power = document.getElementById('holo-toggle');
