@@ -1,0 +1,7 @@
+{
+  "name": "infinitypips",
+  "private": true,
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
+}
