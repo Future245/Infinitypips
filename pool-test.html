@@ -52,6 +52,7 @@
   <div class="card">
     <h2>3 &middot; Same limit or separate limits?</h2>
     <button id="btnRate" disabled>Run the rate test (about 3 minutes)<small>Runs App 1 alone until Deriv says slow down, waits a minute, then runs all four at once. Stops each connection at the first slow-down message. Keep this page open.</small></button>
+    <button id="btnRateB" disabled>Only the all-four-at-once part (about 1 minute)<small>Skips the solo run. Uses 360 as the solo number unless a solo run was already done in this tab. Wait about a minute after your last rate test before tapping.</small></button>
     <div class="sub" id="rateStatus"></div>
   </div>
 
@@ -71,6 +72,20 @@
   var COOLDOWN_SECONDS = 65;   // lets the 1-minute window reset between runs
   var conns = {};
   var report = [];
+  var keepTimer = null;
+  var BASELINE_DEFAULT = 360;   // App 1 solo result from the first real test
+
+  // Deriv closes connections that sit idle, so ping the quiet ones every 15s.
+  function startKeepAlive(){
+    stopKeepAlive();
+    keepTimer = setInterval(function(){
+      SLOTS.forEach(function(n){
+        var c = conns[n];
+        if (c && c.open && !c.probing) call(c, { ping: 1 }).catch(function(){});
+      });
+    }, 15000);
+  }
+  function stopKeepAlive(){ if (keepTimer){ clearInterval(keepTimer); keepTimer = null; } }
 
   function $(id){ return document.getElementById(id); }
   function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
@@ -186,6 +201,7 @@
     var count = openConns().length;
     $('btnAlive').disabled = count === 0;
     $('btnRate').disabled = count === 0;
+    $('btnRateB').disabled = count === 0;
   }
 
   // ---- 1. connect ----
@@ -247,9 +263,11 @@
       var pend = {};
       var start = Date.now();
       var iv;
+      c.probing = true;
       function finish(){
         if (stopped) return;
         stopped = true;
+        c.probing = false;
         clearInterval(iv);
         c.listeners = c.listeners.filter(function(f){ return f !== listener; });
         setTimeout(function(){
@@ -291,51 +309,88 @@
       (r.hit ? 'slow-down message' : (r.other ? 'other errors (' + r.other + ')' : 'no limit reached')) + (r.note ? ' [' + r.note + ']' : '');
   }
 
-  $('btnRate').onclick = function(){
-    var btn = $('btnRate');
-    btn.disabled = true;
-    var list = openConns();
-    var first = list[0];
+  function ensureConnected(){
+    var missing = SLOTS.filter(function(n){ return !(conns[n] && conns[n].open); });
+    if (!missing.length) return Promise.resolve();
+    addReport('Reconnecting ' + missing.map(function(n){ return 'App ' + n; }).join(', ') + ' (Deriv closes idle connections)…');
+    return Promise.all(missing.map(connectSlot));
+  }
+
+  function countdown(seconds, label){
     var status = $('rateStatus');
-    addReport('--- Rate test (' + PROBE_PER_SEC + ' proposals/sec per connection, demo only, no buys) ---');
-    status.textContent = 'Run A: App ' + first + ' alone…';
-    probe(conns[first]).then(function(solo){
-      addReport('Run A (App ' + first + ' alone): ' + line(solo));
-      var left = COOLDOWN_SECONDS;
-      return new Promise(function(resolve){
-        var iv = setInterval(function(){
-          status.textContent = 'Waiting ' + left + 's for the limit window to reset…';
-          if (--left < 0){ clearInterval(iv); resolve(solo); }
-        }, 1000);
-      });
-    }).then(function(solo){
+    return new Promise(function(resolve){
+      var left = seconds;
+      var iv = setInterval(function(){
+        status.textContent = label.replace('{s}', left);
+        if (--left < 0){ clearInterval(iv); resolve(); }
+      }, 1000);
+    });
+  }
+
+  function runSimultaneous(baseline){
+    var status = $('rateStatus');
+    return ensureConnected().then(function(){
       var live = openConns();
+      if (live.length < 2){
+        addReport('RESULT: only ' + live.length + ' connection(s) could be opened, so the all-at-once run was skipped and nothing can be concluded. Run step 1 again, then retry.');
+        return;
+      }
       status.textContent = 'Run B: ' + live.length + ' connections at the same time…';
       return Promise.all(live.map(function(n){ return probe(conns[n]); })).then(function(results){
         results.forEach(function(r){ addReport('Run B ' + line(r)); });
-        verdict(solo, results);
+        verdict(baseline, results);
       });
-    }).then(function(){
-      status.textContent = 'Done.';
-      btn.disabled = false;
-      refreshButtons();
-    }).catch(function(err){
-      status.textContent = 'Test stopped: ' + err.message;
-      btn.disabled = false;
-      refreshButtons();
     });
+  }
+
+  function finishRate(msg){
+    stopKeepAlive();
+    $('rateStatus').textContent = msg;
+    $('btnRate').disabled = false;
+    $('btnRateB').disabled = false;
+    refreshButtons();
+  }
+
+  $('btnRate').onclick = function(){
+    $('btnRate').disabled = true; $('btnRateB').disabled = true;
+    addReport('--- Rate test (' + PROBE_PER_SEC + ' proposals/sec per connection, demo only, no buys) ---');
+    startKeepAlive();
+    ensureConnected().then(function(){
+      var live = openConns();
+      if (!live.length) throw new Error('no connections could be opened');
+      var first = live[0];
+      $('rateStatus').textContent = 'Run A: App ' + first + ' alone…';
+      return probe(conns[first]);
+    }).then(function(solo){
+      addReport('Run A (App ' + solo.n + ' alone): ' + line(solo));
+      if (solo.hit) { try { sessionStorage.setItem('pool_solo_baseline', String(solo.acceptedBeforeLimit)); } catch (e) {} }
+      return countdown(COOLDOWN_SECONDS, 'Waiting {s}s for the limit window to reset…').then(function(){ return runSimultaneous(solo); });
+    }).then(function(){ finishRate('Done.'); })
+      .catch(function(err){ addReport('Test stopped: ' + err.message); finishRate('Test stopped: ' + err.message); });
+  };
+
+  $('btnRateB').onclick = function(){
+    $('btnRate').disabled = true; $('btnRateB').disabled = true;
+    var stored = Number((function(){ try { return sessionStorage.getItem('pool_solo_baseline'); } catch (e) { return null; } })());
+    var baseline = stored || BASELINE_DEFAULT;
+    addReport('--- Rate test, all-at-once part only (' + PROBE_PER_SEC + ' proposals/sec per connection, demo only, no buys) ---');
+    addReport('Solo number used: ' + baseline + (stored ? ' (from the solo run in this tab)' : ' (taken from the earlier solo run, not re-measured now)'));
+    startKeepAlive();
+    runSimultaneous({ n: 1, hit: true, acceptedBeforeLimit: baseline })
+      .then(function(){ finishRate('Done.'); })
+      .catch(function(err){ addReport('Test stopped: ' + err.message); finishRate('Test stopped: ' + err.message); });
   };
 
   function verdict(solo, group){
     var total = group.reduce(function(s, r){ return s + r.acceptedBeforeLimit; }, 0);
     var hits = group.filter(function(r){ return r.hit; }).length;
-    addReport('Total accepted in Run B: ' + total + ' across ' + group.length + ' connections');
+    addReport('Total accepted in the all-at-once run: ' + total + ' across ' + group.length + ' connections');
     if (!solo.hit){
       addReport('RESULT: App ' + solo.n + ' alone never hit a limit in ' + PROBE_MAX_SECONDS + 's at ' + PROBE_PER_SEC + '/s, so this test cannot measure it. The limit is higher than the test speed.');
       return;
     }
     if (hits === 0){
-      addReport('RESULT: Running all at once never triggered a slow-down. Limits did not bind in this test.');
+      addReport('RESULT: with all connections running, no slow-down message came within ' + PROBE_MAX_SECONDS + 's, even though one connection alone hit it. Treat the limits as separate, or rerun to confirm.');
       return;
     }
     var avg = total / group.length;
@@ -343,7 +398,7 @@
     if (ratio >= 0.8){
       addReport('RESULT: SEPARATE limits. Each connection got about its own full allowance (' + Math.round(ratio * 100) + '% of the solo run). Four apps give about four times the capacity here.');
     } else if (ratio <= 0.4){
-      addReport('RESULT: SHARED limit. The four connections split roughly one allowance (each got ' + Math.round(ratio * 100) + '% of the solo run). Four apps do NOT add capacity here, so the limit is tied to your account or network, not the app.');
+      addReport('RESULT: SHARED limit. The connections split roughly one allowance (each got ' + Math.round(ratio * 100) + '% of the solo run). Four apps do NOT add capacity here, so the limit is tied to your account or network, not the app.');
     } else {
       addReport('RESULT: MIXED. Each connection got ' + Math.round(ratio * 100) + '% of the solo run. Partly shared. Send these numbers to Claude.');
     }
