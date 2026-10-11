@@ -385,6 +385,11 @@
     var total = group.reduce(function(s, r){ return s + r.acceptedBeforeLimit; }, 0);
     var hits = group.filter(function(r){ return r.hit; }).length;
     addReport('Total accepted in the all-at-once run: ' + total + ' across ' + group.length + ' connections');
+    var stale = group.filter(function(r){ return r.hit && r.acceptedBeforeLimit === 0; });
+    if (stale.length){
+      addReport('RESULT: INVALID RUN. ' + stale.map(function(r){ return 'App ' + r.n; }).join(', ') + ' was already slowed down when this run began (used less than a minute or two ago). Wait 2 minutes and run it again. Ignore the numbers above.');
+      return;
+    }
     if (!solo.hit){
       addReport('RESULT: App ' + solo.n + ' alone never hit a limit in ' + PROBE_MAX_SECONDS + 's at ' + PROBE_PER_SEC + '/s, so this test cannot measure it. The limit is higher than the test speed.');
       return;
@@ -393,14 +398,14 @@
       addReport('RESULT: with all connections running, no slow-down message came within ' + PROBE_MAX_SECONDS + 's, even though one connection alone hit it. Treat the limits as separate, or rerun to confirm.');
       return;
     }
-    var avg = total / group.length;
-    var ratio = avg / Math.max(solo.acceptedBeforeLimit, 1);
-    if (ratio >= 0.8){
-      addReport('RESULT: SEPARATE limits. Each connection got about its own full allowance (' + Math.round(ratio * 100) + '% of the solo run). Four apps give about four times the capacity here.');
-    } else if (ratio <= 0.4){
-      addReport('RESULT: SHARED limit. The connections split roughly one allowance (each got ' + Math.round(ratio * 100) + '% of the solo run). Four apps do NOT add capacity here, so the limit is tied to your account or network, not the app.');
+    var mult = total / Math.max(solo.acceptedBeforeLimit, 1);
+    var txt = 'All together they got ' + mult.toFixed(1) + 'x what one connection got alone (' + total + ' vs ' + solo.acceptedBeforeLimit + ').';
+    if (mult >= 0.8 * group.length){
+      addReport('RESULT: SEPARATE limits. ' + txt + ' Each app has its own allowance, so four apps give about four times the capacity.');
+    } else if (mult <= 1.3){
+      addReport('RESULT: SHARED limit. ' + txt + ' Four apps add no extra capacity; the limit is tied to the account or network.');
     } else {
-      addReport('RESULT: MIXED. Each connection got ' + Math.round(ratio * 100) + '% of the solo run. Partly shared. Send these numbers to Claude.');
+      addReport('RESULT: PARTLY SHARED. ' + txt + ' More than one connection can get, far less than ' + group.length + 'x. Compare the per-app numbers above: if they differ a lot, the limits are not simply per app.');
     }
   }
 
