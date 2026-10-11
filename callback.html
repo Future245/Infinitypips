@@ -71,14 +71,14 @@
     box.appendChild(link);
   }
 
-  function showSuccess(){
+  function showSuccess(slot){
     spinner.style.display = 'none';
-    title.textContent = 'Connected!';
+    title.textContent = slot > 1 ? 'App ' + slot + ' connected!' : 'Connected!';
     message.textContent = 'Redirecting you back to the app…';
     var target = sessionStorage.getItem('deriv_post_auth_target') || 'portal';
     sessionStorage.removeItem('deriv_post_auth_target');
     var destination = target === 'robot' ? '/Ariana.html' : '/';
-    setTimeout(function(){ window.location.href = destination + '?deriv_connected=1'; }, 1200);
+    setTimeout(function(){ window.location.href = destination + '?deriv_connected=1&slot=' + slot; }, 1200);
   }
 
   var params = new URLSearchParams(window.location.search);
@@ -96,8 +96,19 @@
     return;
   }
 
-  var storedState = sessionStorage.getItem('deriv_oauth_state');
-  var codeVerifier = sessionStorage.getItem('deriv_code_verifier');
+  // The login was started for one of four separate Deriv apps ("slots").
+  // The slot travels inside `state` (e.g. "s2.<random>") because all four
+  // apps share this one callback URL. Each slot keeps its own state,
+  // verifier and token, so finishing one app never overwrites another.
+  var slotMatch = /^s([1-4])\./.exec(state);
+  if (!slotMatch){
+    showError('Security check failed (unknown app). Please try logging in again.');
+    return;
+  }
+  var slot = Number(slotMatch[1]);
+
+  var storedState = sessionStorage.getItem('deriv_oauth_state_' + slot);
+  var codeVerifier = sessionStorage.getItem('deriv_code_verifier_' + slot);
 
   if (!storedState || state !== storedState){
     showError('Security check failed (state mismatch). Please try logging in again.');
@@ -118,7 +129,8 @@
     body: JSON.stringify({
       code: code,
       code_verifier: codeVerifier,
-      redirect_uri: window.location.origin + '/callback'
+      redirect_uri: window.location.origin + '/callback',
+      slot: slot
     })
   })
   .then(function(res){
@@ -127,8 +139,8 @@
     });
   })
   .then(function(result){
-    sessionStorage.removeItem('deriv_oauth_state');
-    sessionStorage.removeItem('deriv_code_verifier');
+    sessionStorage.removeItem('deriv_oauth_state_' + slot);
+    sessionStorage.removeItem('deriv_code_verifier_' + slot);
 
     if (!result.ok){
       if (result.status === 403 && result.data && result.data.error === 'not_authorized'){
@@ -147,9 +159,12 @@
       // sessionStorage is the simplest place to hand the token to the rest
       // of the app. For a production trading tool, consider having the
       // function set it as a short-lived, httpOnly cookie instead.
-      sessionStorage.setItem('deriv_access_token', result.data.access_token);
+      // One token per app slot. Slot 1 is also stored under the original
+      // key so Ariana.html and the rest of the app keep working unchanged.
+      sessionStorage.setItem('deriv_access_token_' + slot, result.data.access_token);
+      if (slot === 1){ sessionStorage.setItem('deriv_access_token', result.data.access_token); }
       if (result.data.loginid){ sessionStorage.setItem('deriv_loginid', result.data.loginid); }
-      showSuccess();
+      showSuccess(slot);
     } else {
       showError('No access token returned.');
     }
