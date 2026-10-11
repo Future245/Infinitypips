@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Direct-buy speed test</title>
+<style>
+  :root{ box-sizing:border-box; }
+  *{ box-sizing:inherit; margin:0; padding:0; }
+  body{ font-family:-apple-system,'Inter',system-ui,sans-serif; background:#050a1f; color:#eaf3fb; min-height:100vh; padding:20px 16px 48px; line-height:1.5; }
+  .wrap{ max-width:520px; margin:0 auto; display:flex; flex-direction:column; gap:16px; }
+  a.back{ color:#7cc6f2; font-size:.85rem; text-decoration:none; }
+  h1{ font-size:1.3rem; }
+  .sub{ color:#8fa8ce; font-size:.85rem; }
+  .warn{ border:1px solid #ffb54a66; background:#ffb54a14; color:#ffd596; border-radius:14px; padding:12px 14px; font-size:.82rem; }
+  .card{ border:1px solid #2c4be03c; background:linear-gradient(165deg,#0f1f47,#0a1330); border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .card h2{ font-size:.78rem; letter-spacing:.14em; text-transform:uppercase; color:#3fe0e6; font-weight:700; }
+  .row{ display:flex; gap:12px; align-items:flex-start; padding:10px 12px; border-radius:12px; border:1px solid #2c4be03c; background:#0c1836; }
+  .dot{ flex:none; width:12px; height:12px; margin-top:5px; border-radius:50%; background:#51628a; }
+  .row.ok .dot{ background:#3fe6a0; box-shadow:0 0 10px #3fe6a0; }
+  .row.bad .dot{ background:#ff4d5e; box-shadow:0 0 10px #ff4d5e; }
+  .row.wait .dot{ background:#3fe0e6; animation:pulse 1s ease-in-out infinite; }
+  @keyframes pulse{ 50%{ opacity:.3; } }
+  .row small{ display:block; font:600 .72rem 'Share Tech Mono',ui-monospace,monospace; color:#8fa8ce; word-break:break-word; }
+  .row strong{ font-size:.9rem; }
+  button{ font:700 .9rem Inter,system-ui,sans-serif; color:#eaf3fb; background:linear-gradient(160deg,#1a3a72,#0d2049); border:1px solid #3fe0e655; border-radius:14px; padding:14px 16px; text-align:left; cursor:pointer; }
+  button:disabled{ opacity:.4; cursor:not-allowed; }
+  button small{ display:block; font-weight:500; font-size:.74rem; color:#8fa8ce; margin-top:2px; }
+  textarea{ width:100%; min-height:260px; background:#060d22; color:#b8cdec; border:1px solid #2c4be03c; border-radius:12px; padding:12px; font:.72rem/1.5 'Share Tech Mono',ui-monospace,monospace; resize:vertical; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">&larr; Back to app</a>
+  <div>
+    <h1>Direct-buy speed test</h1>
+    <p class="sub">Tests buying without asking for a price first (one call per trade instead of two), and shows how many trades land in each tick. One connection, App 1.</p>
+  </div>
+  <div class="warn"><strong>Demo money only.</strong> This page refuses to run unless it finds a <strong>demo</strong> account, and it never touches a real one. Each trade is the smallest stake, $0.35 on Volatility 75 (Digit Differs, 1 tick). The full burst is 30 trades, about $10.50 of demo stake.</div>
+
+  <div class="card">
+    <h2>1 &middot; Connect</h2>
+    <div class="row" id="conn"><span class="dot"></span><div><strong>App 1</strong><small id="connText">Not connected yet</small></div></div>
+    <button id="btnConnect">Connect to the demo account</button>
+  </div>
+
+  <div class="card">
+    <h2>2 &middot; One direct buy</h2>
+    <button id="btnOne" disabled>Place ONE direct buy<small>Checks that Deriv accepts a buy without a price quote first. Shows the raw answer.</small></button>
+  </div>
+
+  <div class="card">
+    <h2>3 &middot; Speed burst</h2>
+    <button id="btnBurst" disabled>6 buys per second for 5 seconds<small>30 demo trades. Stops at the first slow-down message. Then counts how many trades landed in each tick.</small></button>
+    <div class="sub" id="status"></div>
+  </div>
+
+  <div class="card">
+    <h2>Results</h2>
+    <textarea id="report" readonly placeholder="Results appear here. Tap Copy and paste them back to Claude."></textarea>
+    <button id="btnCopy">Copy results</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  var API = 'https://api.derivws.com';
+  var SYMBOL = 'R_75';
+  var STAKE = 0.35;          // smallest stake, fixed on purpose
+  var BURST_PER_SEC = 6;
+  var BURST_SECONDS = 5;
+  var c = null;              // the one connection
+  var ticks = [];            // tick epochs seen on the stream
+  var report = [];
+  var busy = false;
+
+  function $(id){ return document.getElementById(id); }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  function add(line){ report.push(line); $('report').value = report.join('\n'); }
+  function setConn(state, text){ $('conn').className = 'row ' + state; $('connText').textContent = text; }
+  function isDemo(a){ return a.account_type === 'demo' || a.is_virtual === true || a.type === 'demo'; }
+  function isRate(e){ return /rate|too many|limit/i.test(String(e.code || '') + ' ' + String(e.message || '')); }
+  function token(){ return sessionStorage.getItem('deriv_access_token_1') || sessionStorage.getItem('deriv_access_token'); }
+
+  function call(payload){
+    return new Promise(function(resolve, reject){
+      if (!c || !c.open) return reject(new Error('not connected'));
+      var id = ++c.seq;
+      payload.req_id = id;
+      c.pending[id] = { resolve: resolve, t0: performance.now() };
+      c.ws.send(JSON.stringify(payload));
+      setTimeout(function(){ if (c.pending[id]){ delete c.pending[id]; reject(new Error('timeout')); } }, 10000);
+    });
+  }
+
+  function buyPayload(){
+    // Contract details go inside `parameters`, so no proposal call is needed.
+    return {
+      buy: 1,
+      price: STAKE,
+      parameters: {
+        amount: STAKE, basis: 'stake', contract_type: 'DIGITDIFF', currency: c.currency,
+        duration: 1, duration_unit: 't', barrier: '5', underlying_symbol: SYMBOL
+      }
+    };
+  }
+
+  function connect(){
+    var tok = token();
+    if (!tok){ setConn('bad', 'No token in this tab. Connect App 1 in the Client Portal first, then open this page in the same tab.'); return; }
+    setConn('wait', 'Connecting…');
+    $('btnConnect').disabled = true;
+    var h = { 'Authorization': 'Bearer ' + tok };
+    fetch(API + '/trading/v1/options/accounts', { headers: h })
+      .then(function(r){ if (!r.ok) throw new Error('accounts HTTP ' + r.status); return r.json(); })
+      .then(function(res){
+        var demo = ((res && res.data) || []).find(isDemo);
+        if (!demo) throw new Error('NODEMO');
+        var id = demo.id || demo.account_id || demo.loginid;
+        return fetch(API + '/trading/v1/options/accounts/' + id + '/otp', { method: 'POST', headers: h })
+          .then(function(r){ if (!r.ok) throw new Error('OTP HTTP ' + r.status); return r.json(); })
+          .then(function(o){ return { id: id, url: o && o.data && o.data.url }; });
+      })
+      .then(function(info){
+        if (!info.url) throw new Error('no WebSocket URL returned');
+        return new Promise(function(resolve, reject){
+          if (c && c.ws) { try { c.ws.close(); } catch (e) {} }
+          c = { ws: null, open: false, seq: 0, pending: {}, account: info.id, currency: 'USD' };
+          var ws = new WebSocket(info.url); c.ws = ws;
+          var timer = setTimeout(function(){ reject(new Error('WebSocket timed out')); }, 15000);
+          ws.onopen = function(){
+            c.open = true;
+            call({ balance: 1 }).then(function(m){
+              clearTimeout(timer);
+              if (m.balance) c.currency = m.balance.currency || 'USD';
+              setConn('ok', 'Connected · demo ' + info.id + (m.balance ? ' · ' + c.currency + ' ' + m.balance.balance : ''));
+              resolve();
+            }).catch(reject);
+          };
+          ws.onmessage = function(ev){
+            var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+            // Answer the waiting request first (the first reply to a tick subscription is itself a tick).
+            var p = c.pending[m.req_id];
+            if (p){ delete c.pending[m.req_id]; m._ms = performance.now() - p.t0; p.resolve(m); }
+            if (m.msg_type === 'tick' && m.tick && m.tick.epoch) ticks.push(m.tick.epoch);
+          };
+          ws.onclose = function(ev){ var was = c.open; c.open = false; if (was) setConn('bad', 'Connection closed (code ' + ev.code + '). Tap Connect again.'); refresh(); };
+          ws.onerror = function(){};
+        });
+      })
+      .then(function(){
+        add('Connected to demo account ' + c.account + ' (' + c.currency + ')');
+        // Tick stream, used to show where trades land. If this is not accepted, grouping falls back to start times.
+        return call({ ticks: SYMBOL, subscribe: 1 }).then(function(m){
+          if (m.error) add('Tick stream not available: ' + m.error.code + ': ' + m.error.message + ' (trades will be grouped by start time instead)');
+        }).catch(function(){});
+      })
+      .catch(function(err){
+        setConn('bad', err.message === 'NODEMO' ? 'No demo account on this login. This page never uses a real account, so it stops here.' : 'Failed: ' + err.message);
+      })
+      .then(function(){ $('btnConnect').disabled = false; refresh(); });
+  }
+
+  function refresh(){
+    var ok = !!(c && c.open) && !busy;
+    $('btnOne').disabled = !ok;
+    $('btnBurst').disabled = !ok;
+  }
+
+  function describe(m){
+    if (m.error) return 'ERROR ' + (m.error.code || '') + ': ' + (m.error.message || JSON.stringify(m.error));
+    var b = m.buy || {};
+    return 'accepted in ' + Math.round(m._ms) + ' ms, contract ' + (b.contract_id || '?') + ', start_time ' + (b.start_time || '?');
+  }
+
+  // ---- one buy ----
+  $('btnOne').onclick = function(){
+    busy = true; refresh();
+    add('--- One direct buy ($' + STAKE + ' demo, ' + SYMBOL + ', Digit Differs, 1 tick) ---');
+    call(buyPayload()).then(function(m){
+      add('Result: ' + describe(m));
+      add('Raw answer: ' + JSON.stringify(m.error ? m.error : m.buy).slice(0, 400));
+      add(m.error ? 'RESULT: direct buy NOT accepted as sent. Send this to Claude.' : 'RESULT: direct buy works. One call per trade is possible.');
+    }).catch(function(err){ add('Failed: ' + err.message); })
+      .then(function(){ busy = false; refresh(); });
+  };
+
+  // ---- burst ----
+  $('btnBurst').onclick = function(){
+    busy = true; refresh();
+    var total = BURST_PER_SEC * BURST_SECONDS;
+    var results = [], sent = 0, stopped = false, rateHit = false;
+    var t0 = Date.now();
+    add('--- Burst: ' + BURST_PER_SEC + ' direct buys/sec for ' + BURST_SECONDS + 's (max ' + total + ' demo trades) ---');
+    var tickMark = ticks.length;
+    $('status').textContent = 'Running…';
+    var iv = setInterval(function(){
+      if (stopped || sent >= total){ clearInterval(iv); return; }
+      sent++;
+      var sentAt = Date.now() - t0;
+      call(buyPayload()).then(function(m){
+        results.push({ at: sentAt, m: m });
+        if (m.error && isRate(m.error) && !rateHit){ rateHit = true; stopped = true; }
+      }).catch(function(err){ results.push({ at: sentAt, m: { error: { code: 'client', message: err.message } } }); });
+    }, 1000 / BURST_PER_SEC);
+
+    var wait = setInterval(function(){
+      if (results.length >= sent && (sent >= total || stopped)){
+        clearInterval(wait);
+        setTimeout(function(){ finishBurst(results, sent, rateHit, tickMark, Date.now() - t0); }, 500);
+      }
+    }, 300);
+  };
+
+  function finishBurst(results, sent, rateHit, tickMark, elapsed){
+    var ok = results.filter(function(r){ return !r.m.error && r.m.buy; });
+    var errs = results.filter(function(r){ return r.m.error; });
+    add('Sent ' + sent + ' in ' + (elapsed / 1000).toFixed(1) + 's, accepted ' + ok.length + ', rejected ' + errs.length);
+    if (ok.length){
+      var ms = ok.map(function(r){ return r.m._ms; }).sort(function(a, b){ return a - b; });
+      add('Buy answer time: median ' + Math.round(ms[Math.floor(ms.length / 2)]) + ' ms, slowest ' + Math.round(ms[ms.length - 1]) + ' ms');
+    }
+    if (errs.length){
+      var kinds = {};
+      errs.forEach(function(r){ var k = (r.m.error.code || '') + ': ' + (r.m.error.message || ''); kinds[k] = (kinds[k] || 0) + 1; });
+      Object.keys(kinds).forEach(function(k){ add('  rejected x' + kinds[k] + ' [' + k + ']'); });
+    }
+    if (rateHit) add('Slow-down message reached after ' + ok.length + ' accepted buys.');
+
+    // Where did the trades land? Group by start_time (the tick the contract starts on).
+    var groups = {};
+    ok.forEach(function(r){ var k = r.m.buy.start_time || 'unknown'; groups[k] = (groups[k] || 0) + 1; });
+    var keys = Object.keys(groups).sort();
+    if (keys.length){
+      add('Trades per tick (grouped by contract start time):');
+      var maxPer = 0;
+      keys.forEach(function(k){ maxPer = Math.max(maxPer, groups[k]); add('  tick ' + k + ': ' + groups[k] + ' trades'); });
+      var avg = ok.length / keys.length;
+      add('Average ' + avg.toFixed(1) + ' trades per tick, busiest tick ' + maxPer + '.');
+    }
+    var seen = ticks.slice(tickMark);
+    if (seen.length > 1){
+      var gaps = []; for (var i = 1; i < seen.length; i++) gaps.push(seen[i] - seen[i - 1]);
+      var avgGap = gaps.reduce(function(s, g){ return s + g; }, 0) / gaps.length;
+      add('Tick spacing seen during the burst: about ' + avgGap.toFixed(1) + ' s.');
+    }
+    // Rate over the time the buys were actually being sent (not the final wait for answers).
+    var ats = results.map(function(r){ return r.at; });
+    var span = (Math.max.apply(null, ats) - Math.min.apply(null, ats)) / 1000 + 1 / BURST_PER_SEC;
+    var perSec = ok.length / Math.max(span, 0.1);
+    add(ok.length === sent
+      ? 'RESULT: all ' + sent + ' direct buys accepted at about ' + perSec.toFixed(1) + ' trades/sec from one connection.'
+      : 'RESULT: only ' + ok.length + ' of ' + sent + ' accepted. See the rejection reasons above.');
+    $('status').textContent = 'Done.';
+    busy = false; refresh();
+  }
+
+  $('btnConnect').onclick = connect;
+  $('btnCopy').onclick = function(){
+    var ta = $('report'); ta.select();
+    var done = function(){ $('btnCopy').textContent = 'Copied'; setTimeout(function(){ $('btnCopy').textContent = 'Copy results'; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(ta.value).then(done, function(){ try { document.execCommand('copy'); done(); } catch (e) {} });
+    } else { try { document.execCommand('copy'); done(); } catch (e) {} }
+  };
+  refresh();
+})();
+</script>
+</body>
+</html>
