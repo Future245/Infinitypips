@@ -13,9 +13,25 @@
 // different app_user is rejected rather than silently reassigned. Nothing
 // here needs manual SQL after deploying.
 //
+// FOUR-APP SUPPORT
+// The portal connects up to four separate Deriv apps ("slots" 1-4), one
+// after another, all for the SAME Deriv account. The browser says which
+// slot it is finishing (`slot` in the request body); this function picks
+// that slot's App ID from its own environment, so the code exchange always
+// uses the same client_id the login was started with. Slot 1 behaves
+// exactly like the old single-app flow. Slots 2-4 are only accepted when
+//   - this browser already has a session (slot 1 was done first),
+//   - the previous slot is already recorded as connected, and
+//   - the Deriv login is the one already linked to that session.
+// Each successful connection is recorded in app_connections
+// (db/app_connections_schema.sql).
+//
 // Environment variables required:
-//   DERIV_CLIENT_ID  - your Deriv App ID
-//   DATABASE_URL     - the Neon Postgres connection string
+//   DERIV_CLIENT_ID    - App ID for slot 1 (unchanged from before)
+//   DERIV_CLIENT_ID_2  - App ID for slot 2
+//   DERIV_CLIENT_ID_3  - App ID for slot 3
+//   DERIV_CLIENT_ID_4  - App ID for slot 4
+//   DATABASE_URL       - the Neon Postgres connection string
 
 const { Client } = require('pg');
 const crypto = require('crypto');
@@ -25,6 +41,17 @@ const ACCOUNTS_URL = 'https://api.derivws.com/trading/v1/options/accounts';
 
 const SESSION_COOKIE = 'app_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const MAX_SLOT = 4;
+
+// Slot 1 keeps using the original DERIV_CLIENT_ID variable so existing
+// deployments keep working without any change.
+function clientIdForSlot(slot) {
+  return slot === 1 ? process.env.DERIV_CLIENT_ID : process.env['DERIV_CLIENT_ID_' + slot];
+}
+
+function jsonError(statusCode, error, message) {
+  return { statusCode: statusCode, body: JSON.stringify({ error: error, message: message }) };
+}
 
 function parseCookies(header) {
   const out = {};
@@ -48,12 +75,6 @@ exports.handler = async function (event) {
     return { statusCode: 405, body: 'Method not allowed' };
   }
 
-  const DERIV_CLIENT_ID = process.env.DERIV_CLIENT_ID;
-  if (!DERIV_CLIENT_ID) {
-    console.error('DERIV_CLIENT_ID env var is not set');
-    return { statusCode: 500, body: JSON.stringify({ error: 'server_misconfigured', message: 'DERIV_CLIENT_ID env var is not set' }) };
-  }
-
   if (!process.env.DATABASE_URL) {
     console.error('DATABASE_URL env var is not set');
     return { statusCode: 500, body: JSON.stringify({ error: 'server_misconfigured', message: 'DATABASE_URL env var is not set' }) };
@@ -68,6 +89,19 @@ exports.handler = async function (event) {
   }
 
   const { code, code_verifier: codeVerifier, redirect_uri: redirectUri } = payload;
+
+  // Which of the four apps is this login for? Missing = slot 1 (old flow).
+  const slot = payload.slot === undefined || payload.slot === null ? 1 : Number(payload.slot);
+  if (!Number.isInteger(slot) || slot < 1 || slot > MAX_SLOT) {
+    return jsonError(400, 'invalid_slot', 'Unknown app slot.');
+  }
+
+  const DERIV_CLIENT_ID = clientIdForSlot(slot);
+  if (!DERIV_CLIENT_ID) {
+    const varName = slot === 1 ? 'DERIV_CLIENT_ID' : 'DERIV_CLIENT_ID_' + slot;
+    console.error(varName + ' env var is not set');
+    return jsonError(500, 'server_misconfigured', varName + ' env var is not set');
+  }
 
   if (!code || !codeVerifier || !redirectUri) {
     console.error('Missing params:', { code: !!code, codeVerifier: !!codeVerifier, redirectUri: !!redirectUri });
@@ -156,6 +190,29 @@ exports.handler = async function (event) {
       [canonicalLoginid]
     );
 
+    // Slots 2-4 may only EXTEND an existing setup: same browser session,
+    // same Deriv account as slot 1, and the previous slot already done.
+    // They never create users or link a new Deriv identity.
+    if (slot > 1) {
+      if (!sessionAppUserId) {
+        await client.query('ROLLBACK');
+        return jsonError(409, 'previous_slot_required', 'Connect App 1 first, then continue in order.');
+      }
+      if (!existingRes.rows.length || String(existingRes.rows[0].app_user_id) !== String(sessionAppUserId)) {
+        await client.query('ROLLBACK');
+        console.warn('Slot', slot, 'login did not match the linked Deriv account');
+        return jsonError(409, 'different_account', 'App ' + slot + ' must be connected with the same Deriv account as App 1.');
+      }
+      const prevRes = await client.query(
+        "SELECT 1 FROM app_connections WHERE app_user_id = $1 AND app_slot = $2 AND status = 'connected'",
+        [sessionAppUserId, slot - 1]
+      );
+      if (!prevRes.rows.length) {
+        await client.query('ROLLBACK');
+        return jsonError(409, 'previous_slot_required', 'Connect App ' + (slot - 1) + ' first, then continue in order.');
+      }
+    }
+
     let appUserId;
     if (existingRes.rows.length) {
       const linkedAppUserId = existingRes.rows[0].app_user_id;
@@ -200,6 +257,27 @@ exports.handler = async function (event) {
       [newSessionToken, appUserId, canonicalLoginid, expiresAt]
     );
 
+    // Record that this slot is connected. For slot 1 this is best-effort
+    // (a SAVEPOINT keeps the normal login working even if the new table has
+    // not been created yet). For slots 2-4 the record IS the point, so a
+    // failure aborts the request.
+    await client.query('SAVEPOINT record_connection');
+    try {
+      await client.query(
+        "INSERT INTO app_connections (app_user_id, app_slot, client_id, deriv_loginid, status, connected_at, last_checked_at, last_error) " +
+        "VALUES ($1, $2, $3, $4, 'connected', now(), now(), NULL) " +
+        "ON CONFLICT (app_user_id, app_slot) DO UPDATE SET client_id = EXCLUDED.client_id, " +
+        "deriv_loginid = EXCLUDED.deriv_loginid, status = 'connected', connected_at = now(), " +
+        "last_checked_at = now(), last_error = NULL",
+        [appUserId, slot, DERIV_CLIENT_ID, canonicalLoginid]
+      );
+      await client.query('RELEASE SAVEPOINT record_connection');
+    } catch (connErr) {
+      if (slot > 1) throw connErr;
+      console.error('Could not record slot 1 connection (is db/app_connections_schema.sql applied?):', connErr.message);
+      await client.query('ROLLBACK TO SAVEPOINT record_connection');
+    }
+
     await client.query('COMMIT');
 
     return {
@@ -215,7 +293,8 @@ exports.handler = async function (event) {
         access_token: accessToken,
         expires_in: expiresIn,
         token_type: tokenType,
-        loginid: canonicalLoginid
+        loginid: canonicalLoginid,
+        slot: slot
       })
     };
   } catch (err) {
