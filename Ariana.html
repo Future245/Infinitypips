@@ -2488,6 +2488,7 @@
 
           var accountId = account.id || account.account_id || account.loginid;
           if (!accountId) throw new Error('no_account_id');
+          window.DerivConnection.accountId = accountId;
 
           // Step 2: get an authenticated WebSocket URL (OTP) for that account
           return fetch(API_BASE + '/trading/v1/options/accounts/' + accountId + '/otp', {
@@ -2510,6 +2511,8 @@
           ws.onopen = function () {
             window.DerivConnection.ready = true;
             ws.send(JSON.stringify({ balance: 1, subscribe: 1, req_id: 1 }));
+            // Slot 1 is up on the right account: bring up workers 2-4 on the same account.
+            if (window.DerivPool) window.DerivPool.start(window.DerivConnection.accountId);
           };
 
           ws.onmessage = function (event) {
@@ -2549,6 +2552,131 @@
     })();
   </script>
   <script>
+    /* -- Worker pool: four separate Deriv apps, one connection each --
+       Worker 1 is the main connection above. Workers 2-4 use the tokens
+       saved for App 2-4 (deriv_access_token_N), each with its OWN OTP and
+       WebSocket, all on the SAME Deriv account as worker 1. Every worker
+       has its own keep-alive and reconnects by itself, so one worker
+       dropping never stops the others. */
+    (function () {
+      var API_BASE = 'https://api.derivws.com';
+      var workers = [];
+      for (var s = 1; s <= 4; s++) {
+        workers.push({ slot: s, ws: null, status: s === 1 ? 'connecting' : 'idle', cooldownUntil: 0,
+                       sent: 0, ok: 0, fail: 0, retries: 0, fatal: false });
+      }
+      var started = false;
+      var pingId = 900000;
+
+      function socketOf(w) { return w.slot === 1 ? window.DerivConnection.ws : w.ws; }
+      function isReady(w) { var ws = socketOf(w); return !!ws && ws.readyState === 1; }
+
+      function send(w, payload) {
+        var ws = socketOf(w);
+        if (!ws || ws.readyState !== 1) return false;
+        ws.send(JSON.stringify(payload));
+        return true;
+      }
+
+      var badge = document.createElement('div');
+      badge.id = 'worker-badge';
+      badge.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:9999;font:600 11px -apple-system,Inter,sans-serif;' +
+        'color:#d8f6ff;background:rgba(22,15,46,.85);border:1px solid #3a2a63;border-radius:8px;padding:4px 8px;pointer-events:none;';
+      document.body.appendChild(badge);
+
+      function render() {
+        var up = workers.filter(isReady).length;
+        badge.textContent = 'Workers ' + up + '/4  ' + workers.map(function (w) {
+          return (isReady(w) ? '●' : '○') + w.slot;
+        }).join(' ');
+        badge.title = workers.map(function (w) {
+          return 'App ' + w.slot + ': ' + (isReady(w) ? 'live' : w.status) + ' (sent ' + w.sent + ', ok ' + w.ok + ', rejected ' + w.fail + ')';
+        }).join('\n');
+      }
+      setInterval(render, 1000);
+
+      function dispatch(data) {
+        window.DerivConnection.listeners.forEach(function (fn) {
+          try { fn(data); } catch (e) { console.error('Listener error:', e); }
+        });
+      }
+
+      function connect(w, accountId) {
+        var token = sessionStorage.getItem('deriv_access_token_' + w.slot);
+        if (!token) { w.status = 'not connected in portal'; w.fatal = true; return; }
+        w.status = 'connecting';
+        var headers = { 'Authorization': 'Bearer ' + token };
+        fetch(API_BASE + '/trading/v1/options/accounts', { headers: headers })
+          .then(function (res) {
+            if (!res.ok) throw new Error('accounts_http_' + res.status);
+            return res.json();
+          })
+          .then(function (result) {
+            var list = (result && result.data) || [];
+            var match = list.find(function (a) { return (a.id || a.account_id || a.loginid) === accountId; });
+            if (!match) { w.fatal = true; throw new Error('different account'); }
+            return fetch(API_BASE + '/trading/v1/options/accounts/' + accountId + '/otp', { method: 'POST', headers: headers });
+          })
+          .then(function (res) {
+            if (!res.ok) throw new Error('otp_http_' + res.status);
+            return res.json();
+          })
+          .then(function (otp) {
+            var url = otp && otp.data && otp.data.url;
+            if (!url) throw new Error('no_ws_url');
+            var ws = new WebSocket(url);
+            w.ws = ws;
+            ws.onopen = function () { w.status = 'live'; w.retries = 0; };
+            ws.onmessage = function (event) {
+              var data;
+              try { data = JSON.parse(event.data); } catch (e) { return; }
+              dispatch(data);
+            };
+            ws.onerror = function () { console.error('Worker ' + w.slot + ' socket error'); };
+            ws.onclose = function () {
+              if (w.ws === ws) w.ws = null;
+              w.status = 'reconnecting';
+              scheduleRetry(w, accountId);
+            };
+          })
+          .catch(function (err) {
+            console.error('Worker ' + w.slot + ' setup failed:', err.message);
+            w.status = 'failed: ' + err.message;
+            scheduleRetry(w, accountId);
+          });
+      }
+
+      function scheduleRetry(w, accountId) {
+        if (w.fatal) return;
+        w.retries += 1;
+        var delay = Math.min(30000, 1000 * Math.pow(2, Math.min(w.retries, 5)));
+        setTimeout(function () { if (!w.ws) connect(w, accountId); }, delay);
+      }
+
+      // Deriv closes idle sockets, so every worker pings itself.
+      setInterval(function () {
+        workers.forEach(function (w) {
+          pingId += 1;
+          send(w, { ping: 1, req_id: pingId });
+        });
+      }, 15000);
+
+      window.DerivPool = {
+        workers: workers,
+        send: send,
+        isReady: isReady,
+        readyWorkers: function () { return workers.filter(isReady); },
+        start: function (accountId) {
+          if (started) return;
+          started = true;
+          workers[0].status = 'live';
+          workers.slice(1).forEach(function (w) { connect(w, accountId); });
+        }
+      };
+      render();
+    })();
+  </script>
+  <script>
     /* -- Continuous auto-trading on Power toggle --
        Digit Differs, barrier 5, duration 1 tick, on whichever synthetic
        index is currently selected in the modal picker, at the stake
@@ -2573,8 +2701,7 @@
         'Volatility 100 (1s)': '1HZ100V'
       };
 
-      var pendingProposals = {}; // req_id -> true (supports many trades in flight at once)
-      var pendingBuys = {};      // req_id -> true
+      var pendingBuys = {};      // req_id -> true (many trades in flight at once)
       var pendingSettlements = {}; // contract_id -> { indexLabel, stake } (awaiting profit_table)
       var pendingProfitTable = {}; // req_id -> true
       var tradeMeta = {}; // req_id (whichever stage is currently pending) -> { indexLabel, stake }
@@ -2602,6 +2729,7 @@
         if (noTradesRow) { noTradesRow.remove(); noTradesRow = null; }
 
         var isWin = profit >= 0;
+        while (tradeBody.rows.length >= 200) tradeBody.deleteRow(tradeBody.rows.length - 1); // keep the table light at high trade rates
         var tr = document.createElement('tr');
         var tdIndex = document.createElement('td');
         tdIndex.textContent = indexLabel;
@@ -2659,14 +2787,24 @@
         }
       }
 
+      var pollRotation = 0;
       function pollProfitTable() {
+        var now = Date.now();
+        Object.keys(pendingSettlements).forEach(function (id) { // give up on contracts never seen settled
+          if (now - pendingSettlements[id].at > 120000) delete pendingSettlements[id];
+        });
         if (!Object.keys(pendingSettlements).length) return; // nothing awaiting settlement
+        var up = window.DerivPool.readyWorkers();
+        if (!up.length) return;
+        // profit_table is account-wide, so any worker can ask. Rotate between
+        // workers so the small profit_table budget is spread across connections.
+        var w = up[pollRotation++ % up.length];
         var reqId = nextReqId();
         pendingProfitTable[reqId] = true;
-        window.DerivConnection.send({
+        window.DerivPool.send(w, {
           profit_table: 1,
           description: 1,
-          limit: 50,
+          limit: 500,
           sort: 'DESC',
           req_id: reqId
         });
@@ -2689,37 +2827,57 @@
         return val;
       }
 
-      function placeSingleTrade() {
+      // Safety valve for Deriv's cap of 100 open contracts per account. All four
+      // workers trade the same account, so the cap is shared. We count buys
+      // that were accepted but are probably not settled yet, plus buys still
+      // waiting for an answer, and skip a buy when we are near the cap.
+      var OPEN_GUARD = 92;
+      var globalCooldownUntil = 0;
+      var guardSkips = 0;
+
+      function openEstimate(graceMs) {
+        var now = Date.now(), n = 0;
+        for (var id in pendingSettlements) {
+          if (now - pendingSettlements[id].at < graceMs) n++;
+        }
+        return n + Object.keys(pendingBuys).length;
+      }
+
+      function placeWorkerTrade(w) {
+        var now = Date.now();
+        if (now < w.cooldownUntil || now < globalCooldownUntil) return;
         var picked = getSelectedSymbol();
         if (!picked.symbol) {
           showToast('Unknown synthetic index: ' + picked.label, true);
           return;
         }
+        // A contract lasts until the next tick (1s or 2s) plus a little settle time.
+        var graceMs = picked.symbol.indexOf('1HZ') === 0 ? 2500 : 3500;
+        if (openEstimate(graceMs) >= OPEN_GUARD) { guardSkips++; return; }
 
         var stake = getStake();
         var currency = (window.DerivConnection && window.DerivConnection.currency) || 'USD';
         var reqId = nextReqId();
-        pendingProposals[reqId] = true;
-        tradeMeta[reqId] = { indexLabel: picked.label, stake: stake };
-
-        var sent = window.DerivConnection.send({
-          proposal: 1,
-          amount: stake,
-          basis: 'stake',
-          contract_type: 'DIGITDIFF',
-          currency: currency,
-          duration: 1,
-          duration_unit: 't',
-          barrier: '5',
-          underlying_symbol: picked.symbol,
+        // Direct buy: one call per trade (no proposal step).
+        var sent = window.DerivPool.send(w, {
+          buy: 1,
+          price: stake,
+          parameters: {
+            amount: stake,
+            basis: 'stake',
+            contract_type: 'DIGITDIFF',
+            currency: currency,
+            duration: 1,
+            duration_unit: 't',
+            barrier: '5',
+            underlying_symbol: picked.symbol
+          },
           req_id: reqId
         });
-
-        if (!sent) {
-          delete pendingProposals[reqId];
-          delete tradeMeta[reqId];
-          showToast('Not connected to Deriv yet \u2014 try again in a moment.', true);
-        }
+        if (!sent) return; // this worker is down right now; the others carry on
+        pendingBuys[reqId] = true;
+        tradeMeta[reqId] = { indexLabel: picked.label, stake: stake, slot: w.slot, at: now };
+        w.sent++;
       }
 
       if (window.DerivConnection) {
@@ -2732,38 +2890,23 @@
       }
 
       function handleTradeMessage(data) {
-        if (pendingProposals[data.req_id]) {
-          delete pendingProposals[data.req_id];
-          var meta = tradeMeta[data.req_id];
-          delete tradeMeta[data.req_id];
-          if (data.error) {
-            showToast('Trade failed: ' + data.error.message, true);
-            return;
-          }
-          if (data.msg_type === 'proposal' && data.proposal) {
-            var buyReqId = nextReqId();
-            pendingBuys[buyReqId] = true;
-            if (meta) tradeMeta[buyReqId] = meta;
-            window.DerivConnection.send({
-              buy: data.proposal.id,
-              price: data.proposal.ask_price,
-              req_id: buyReqId
-            });
-          }
-          return;
-        }
-
         if (pendingBuys[data.req_id]) {
           delete pendingBuys[data.req_id];
           var buyMeta = tradeMeta[data.req_id];
           delete tradeMeta[data.req_id];
+          var bw = buyMeta && window.DerivPool.workers[buyMeta.slot - 1];
           if (data.error) {
-            showToast('Trade failed: ' + data.error.message, true);
+            if (bw) bw.fail++;
+            var code = data.error.code || '';
+            if (code === 'OpenPositionLimit') globalCooldownUntil = Date.now() + 1000;   // account is full: all workers pause briefly
+            else if (/RateLimit/i.test(code) && bw) bw.cooldownUntil = Date.now() + 2000; // only the limited worker backs off
+            showToast('Trade failed: ' + code + ' ' + data.error.message, true);
             return;
           }
           if (data.msg_type === 'buy' && data.buy) {
+            if (bw) bw.ok++;
             showToast('Trade placed \u2014 contract #' + data.buy.contract_id + ' at ' + data.buy.buy_price, false);
-            if (buyMeta) pendingSettlements[data.buy.contract_id] = buyMeta;
+            if (buyMeta) pendingSettlements[data.buy.contract_id] = { indexLabel: buyMeta.indexLabel, stake: buyMeta.stake, at: Date.now() };
           }
           return;
         }
@@ -2801,42 +2944,43 @@
       }
 
 
-      var autoTradeInterval = null;
+      var workerIntervals = [];
       var settlementPollInterval = null;
 
-      // Each trade spends 2 calls (proposal + buy) against Deriv's shared
-      // 360/min budget for proposal/proposal_open_contract/buy/sell.
-      // Target: 6 calls/sec average (360/min) -> 3 trades/sec -> 334ms.
-      // This rides the budget ceiling with ~0 margin: setInterval drift,
-      // network jitter, or any other call sharing this budget can push a
-      // rolling minute over 360 and trigger rejected requests until the
-      // window resets. 334ms (not 333) is intentional headroom against
-      // rounding — 333ms alone nets ~360.4 calls/min, just over the cap.
-      var TRADE_INTERVAL_MS = 334;
-      // profit_table shares a separate, much smaller budget (30/min, shared
-      // with portfolio) — poll well under that.
-      var SETTLEMENT_POLL_MS = 4000;
+      // Every worker buys on its own clock: 6 direct buys per second each
+      // (1 call per trade), so four workers together make 24 calls/second.
+      // Workers start a few ms apart so their buys are spread through each tick.
+      var WORKER_INTERVAL_MS = 167; // ~6 per second per worker
+      // profit_table has a small budget (30/min per connection); polls rotate
+      // across the workers, so one poll every 1.5s is ~10/min per worker.
+      var SETTLEMENT_POLL_MS = 1500;
+
+      function isTrading() { return workerIntervals.length > 0; }
 
       function startAutoTrading() {
-        if (autoTradeInterval) return;
-        placeSingleTrade(); // fire immediately, then on a steady pace
-        autoTradeInterval = setInterval(placeSingleTrade, TRADE_INTERVAL_MS);
+        if (isTrading()) return;
+        window.DerivPool.workers.forEach(function (w, i) {
+          setTimeout(function () {
+            if (!power || !power.checked) return;
+            workerIntervals.push(setInterval(function () { placeWorkerTrade(w); }, WORKER_INTERVAL_MS));
+          }, i * 40);
+        });
+        // mark as started right away so a second toggle can't double-start
+        workerIntervals.push(0);
         if (!settlementPollInterval) {
           settlementPollInterval = setInterval(pollProfitTable, SETTLEMENT_POLL_MS);
         }
       }
 
       function stopAutoTrading() {
-        if (autoTradeInterval) {
-          clearInterval(autoTradeInterval);
-          autoTradeInterval = null;
-        }
+        workerIntervals.forEach(function (id) { if (id) clearInterval(id); });
+        workerIntervals = [];
         // Trades already in flight keep running to settlement \u2014 only new
         // ones stop. Keep polling profit_table until everything still
         // pending has settled, then stop.
         if (settlementPollInterval) {
           var checkDone = setInterval(function () {
-            if (Object.keys(pendingSettlements).length === 0 && !autoTradeInterval) {
+            if (Object.keys(pendingSettlements).length === 0 && !isTrading()) {
               clearInterval(settlementPollInterval);
               settlementPollInterval = null;
               clearInterval(checkDone);
