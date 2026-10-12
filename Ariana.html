@@ -2586,9 +2586,13 @@
 
       function render() {
         var up = workers.filter(isReady).length;
+        var okN = 0, failN = 0;
+        workers.forEach(function (w) { okN += w.ok; failN += w.fail; });
+        badge.style.whiteSpace = 'pre-line';
         badge.textContent = 'Workers ' + up + '/4  ' + workers.map(function (w) {
           return (isReady(w) ? '●' : '○') + w.slot;
-        }).join(' ');
+        }).join(' ') + (okN + failN ? '\nTrades ok ' + okN + ' / rejected ' + failN : '') +
+          (window.DerivPool && window.DerivPool.lastError ? '\nLast error: ' + window.DerivPool.lastError : '');
         badge.title = workers.map(function (w) {
           return 'App ' + w.slot + ': ' + (isReady(w) ? 'live' : w.status) + ' (sent ' + w.sent + ', ok ' + w.ok + ', rejected ' + w.fail + ')';
         }).join('\n');
@@ -2662,6 +2666,7 @@
       }, 15000);
 
       window.DerivPool = {
+        lastError: '',
         workers: workers,
         send: send,
         isReady: isReady,
@@ -2900,6 +2905,7 @@
             var code = data.error.code || '';
             if (code === 'OpenPositionLimit') globalCooldownUntil = Date.now() + 1000;   // account is full: all workers pause briefly
             else if (/RateLimit/i.test(code) && bw) bw.cooldownUntil = Date.now() + 2000; // only the limited worker backs off
+            window.DerivPool.lastError = (code ? code + ': ' : '') + String(data.error.message || '').slice(0, 90);
             showToast('Trade failed: ' + code + ' ' + data.error.message, true);
             return;
           }
