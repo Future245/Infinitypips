@@ -2505,45 +2505,81 @@
           if (!wsUrl) throw new Error('no_ws_url');
 
           // Step 3: connect using the already-authenticated URL and subscribe to balance
-          var ws = new WebSocket(wsUrl);
-          window.DerivConnection.ws = ws;
+          var mainRetries = 0;
 
-          ws.onopen = function () {
-            window.DerivConnection.ready = true;
-            ws.send(JSON.stringify({ balance: 1, subscribe: 1, req_id: 1 }));
-            // Slot 1 is up on the right account: bring up workers 2-4 on the same account.
-            if (window.DerivPool) window.DerivPool.start(window.DerivConnection.accountId);
-          };
-
-          ws.onmessage = function (event) {
-            var data;
-            try { data = JSON.parse(event.data); } catch (e) { return; }
-
-            // Hand every message to any other listeners (e.g. trade execution) first.
-            window.DerivConnection.listeners.forEach(function (fn) {
-              try { fn(data); } catch (e) { console.error('Listener error:', e); }
-            });
-
-            if (data.error && data.req_id === 1) {
-              console.error('Deriv API error:', data.error.code, data.error.message);
-              showBalanceError('Err: ' + data.error.code);
-              return;
-            }
-
-            if (data.msg_type === 'balance' && data.balance) {
+          // A balance update from ANY worker refreshes the display, so the
+          // number keeps moving even if the main connection is down.
+          window.DerivConnection.onMessage(function (data) {
+            if (data && data.msg_type === 'balance' && data.balance) {
               window.DerivConnection.currency = data.balance.currency;
               if (balanceEl) balanceEl.textContent = formatBalance(data.balance.balance, data.balance.currency);
             }
-          };
+          });
 
-          ws.onerror = function () {
-            console.error('Options WebSocket error event fired.');
-          };
+          function openMainSocket(url) {
+            var ws = new WebSocket(url);
+            window.DerivConnection.ws = ws;
 
-          ws.onclose = function (ev) {
-            console.error('Options WebSocket closed:', ev.code, ev.reason);
-            window.DerivConnection.ready = false;
-          };
+            ws.onopen = function () {
+              mainRetries = 0;
+              window.DerivConnection.ready = true;
+              ws.send(JSON.stringify({ balance: 1, subscribe: 1, req_id: 1 }));
+              // Slot 1 is up on the right account: bring up workers 2-4 on the same account.
+              if (window.DerivPool) window.DerivPool.start(window.DerivConnection.accountId);
+            };
+
+            ws.onmessage = function (event) {
+              var data;
+              try { data = JSON.parse(event.data); } catch (e) { return; }
+
+              // Hand every message to the listeners (balance display, trade execution).
+              window.DerivConnection.listeners.forEach(function (fn) {
+                try { fn(data); } catch (e) { console.error('Listener error:', e); }
+              });
+
+              if (data.error && data.req_id === 1) {
+                console.error('Deriv API error:', data.error.code, data.error.message);
+              }
+            };
+
+            ws.onerror = function () {
+              console.error('Options WebSocket error event fired.');
+            };
+
+            ws.onclose = function (ev) {
+              console.error('Options WebSocket closed:', ev.code, ev.reason);
+              if (window.DerivConnection.ws === ws) window.DerivConnection.ready = false;
+              scheduleMainReconnect();
+            };
+          }
+
+          // Deriv closes idle sockets, so the main connection reconnects by itself
+          // (fresh OTP each time) instead of staying dead until the page reloads.
+          function scheduleMainReconnect() {
+            mainRetries += 1;
+            var delay = Math.min(30000, 1000 * Math.pow(2, Math.min(mainRetries, 5)));
+            setTimeout(function () {
+              fetch(API_BASE + '/trading/v1/options/accounts/' + window.DerivConnection.accountId + '/otp', {
+                method: 'POST',
+                headers: authHeaders
+              })
+                .then(function (res) {
+                  if (!res.ok) throw new Error('otp_http_' + res.status);
+                  return res.json();
+                })
+                .then(function (r) {
+                  var u = r && r.data && r.data.url;
+                  if (!u) throw new Error('no_ws_url');
+                  openMainSocket(u);
+                })
+                .catch(function (err) {
+                  console.error('Main reconnect failed:', err.message);
+                  scheduleMainReconnect();
+                });
+            }, delay);
+          }
+
+          openMainSocket(wsUrl);
         })
         .catch(function (err) {
           console.error('Connection setup failed:', err.message);
@@ -2633,7 +2669,10 @@
             if (!url) throw new Error('no_ws_url');
             var ws = new WebSocket(url);
             w.ws = ws;
-            ws.onopen = function () { w.status = 'live'; w.retries = 0; };
+            ws.onopen = function () {
+              w.status = 'live'; w.retries = 0;
+              ws.send(JSON.stringify({ balance: 1, subscribe: 1, req_id: 10 + w.slot }));
+            };
             ws.onmessage = function (event) {
               var data;
               try { data = JSON.parse(event.data); } catch (e) { return; }
@@ -2659,6 +2698,15 @@
         var delay = Math.min(30000, 1000 * Math.pow(2, Math.min(w.retries, 5)));
         setTimeout(function () { if (!w.ws) connect(w, accountId); }, delay);
       }
+
+      // Safety net: ask for the balance every 6s from a connected worker, so the
+      // display catches up even if a balance subscription ever stops.
+      var balRot = 0;
+      setInterval(function () {
+        var up = workers.filter(isReady);
+        if (!up.length) return;
+        send(up[balRot++ % up.length], { balance: 1, req_id: 20 });
+      }, 6000);
 
       // Deriv closes idle sockets, so every worker pings itself.
       setInterval(function () {
