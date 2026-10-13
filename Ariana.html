@@ -3004,9 +3004,24 @@
 
       function isTrading() { return trading; }
 
+      // Risk Options decide how many workers trade at once:
+      //   Smart Risk -> 1 worker (6 buys/s), High Risk -> 3 (18/s), Aggressive Mode -> 4 (24/s).
+      // The trading workers are the first N that are connected, in App order, so
+      // if a worker is down the next one steps in and the count stays the same.
+      var RISK_WORKERS = { 'Smart Risk': 1, 'High Risk': 3, 'Aggressive Mode': 4 };
+      function workersForRisk() {
+        var label = (typeof modalData !== 'undefined' && modalData.risk && modalData.risk.selected) || 'Smart Risk';
+        return RISK_WORKERS[label] || 1;
+      }
+      function isActiveWorker(w) {
+        var ready = window.DerivPool.readyWorkers();
+        var idx = ready.indexOf(w);
+        return idx !== -1 && idx < workersForRisk();
+      }
+
       function workerLoop(w) {
         if (!trading) return;
-        placeWorkerTrade(w);
+        if (isActiveWorker(w)) placeWorkerTrade(w);
         workerTimers[w.slot] = setTimeout(function () { workerLoop(w); }, 1000 / paceRate);
       }
 
