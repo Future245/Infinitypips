@@ -2513,6 +2513,7 @@
           window.DerivConnection.onMessage(function (data) {
             if (data && data.msg_type === 'balance' && data.balance) {
               window.DerivConnection.currency = data.balance.currency;
+              window.DerivConnection.balanceValue = Number(data.balance.balance);
               if (balanceEl) balanceEl.textContent = formatBalance(data.balance.balance, data.balance.currency);
             }
           });
@@ -2918,17 +2919,59 @@
         return n + Object.keys(pendingBuys).length;
       }
 
+      // ---- All Volatility Indices strategy ----
+      // Trades all 10 volatility indices, spread evenly. How many of them are
+      // traded depends on the funds and the allocation per index (the Min Lot
+      // Size box):  indices = floor(funds / allocation), at most 10.
+      // Two workers run it by default (about 12 buys/s together, 6 each).
+      var ALL_LABEL = 'All Volatility Indices';
+      var ALL_WORKERS = 2;
+      var ALL_INDICES = Object.keys(SYMBOL_MAP);    // the 10 indices, standard ones first, then the 1-second ones
+      var allCursor = 0;                            // one shared turn counter, so the two workers never pick the same turn
+      var allStats = { pending: 0, ok: 0, failed: 0, skippedFunds: 0, perIndex: {} };
+      ALL_INDICES.forEach(function (l) { allStats.perIndex[l] = { ok: 0, failed: 0 }; });
+      window.DerivPool.allStats = allStats;
+      Object.defineProperty(allStats, 'pending', { get: function () { return Object.keys(pendingBuys).length; } });
+
+      function isAllMode() {
+        return (typeof modalData !== 'undefined' && modalData.index && modalData.index.selected) === ALL_LABEL;
+      }
+
+      // Funds the strategy has = the balance when it was switched on, plus the
+      // profit/loss already settled since (open trades therefore do not shrink the
+      // number of indices). Number of indices = floor(funds / allocation), max 10.
+      // A buy is only sent while the FREE balance still covers its stake: Deriv
+      // already takes the stake of every open contract off the balance, and the
+      // stakes of buys still waiting for an answer are subtracted here as well.
+      var allStartFunds = null;
+      function pickAllIndex(stake) {
+        var free = window.DerivConnection && window.DerivConnection.balanceValue;
+        if (typeof free !== 'number' || isNaN(free)) return null;               // balance not known yet
+        if (allStartFunds === null) allStartFunds = free;
+        var inflight = 0, id, m;
+        for (id in pendingBuys) { m = tradeMeta[id]; if (m) inflight += m.stake; }
+        var funds = allStartFunds + ((totalWins - totalLosses) - runBaseline);   // total funds for the strategy
+        var count = Math.min(ALL_INDICES.length, Math.floor((funds + 1e-9) / stake));
+        if (count < 1 || free - inflight < stake - 1e-9) { allStats.skippedFunds++; return null; }
+        // planned allocation = count x stake, never more than the funds (count <= funds / stake)
+        var label = ALL_INDICES[allCursor % count];
+        allCursor++;
+        return { label: label, symbol: SYMBOL_MAP[label] };
+      }
+
       function placeWorkerTrade(w) {
         var now = Date.now();
         if (now < w.cooldownUntil || now < globalCooldownUntil) return;
-        var picked = getSelectedSymbol();
+        var all = isAllMode();
+        var picked = all ? pickAllIndex(getStake()) : getSelectedSymbol();
+        if (all && !picked) return;                  // nothing eligible this turn
         if (!picked.symbol) {
           showToast('Unknown synthetic index: ' + picked.label, true);
           return;
         }
         // A contract lasts until the next tick (1s or 2s) plus a little settle time.
-        var graceMs = picked.symbol.indexOf('1HZ') === 0 ? 2500 : 3500;
-        if (openEstimate(graceMs) >= OPEN_GUARD) { guardSkips++; return; }
+        var graceMs = (all || picked.symbol.indexOf('1HZ') !== 0) ? 3500 : 2500;
+        if (openEstimate(graceMs) >= OPEN_GUARD) { guardSkips++; if (all) allCursor--; return; }
 
         var stake = getStake();
         var currency = (window.DerivConnection && window.DerivConnection.currency) || 'USD';
@@ -2972,9 +3015,11 @@
           var bw = buyMeta && window.DerivPool.workers[buyMeta.slot - 1];
           if (data.error) {
             if (bw) bw.fail++;
+            if (buyMeta && allStats.perIndex[buyMeta.indexLabel]) { allStats.perIndex[buyMeta.indexLabel].failed++; allStats.failed++; }
             var code = data.error.code || '';
             if (code === 'OpenPositionLimit') globalCooldownUntil = Date.now() + 1000;   // account is full: all workers pause briefly
             else if (/RateLimit/i.test(code)) onRateLimited(bw);                           // slow down instead of hammering
+            else if (code === 'InsufficientBalance' && isAllMode()) globalCooldownUntil = Date.now() + 1000;  // funds are tight by design here: wait for settlements instead of stopping
             else if (/DailyTurnoverLimit|InsufficientBalance/i.test(code)) haltTrading(code, data.error.message);
             else if (/InvalidToken|AuthorizationRequired|AccountDisabled/i.test(code) && bw) bw.cooldownUntil = Date.now() + 30000;
             window.DerivPool.lastError = (code ? code + ': ' : '') + String(data.error.message || '').slice(0, 120);
@@ -2983,6 +3028,7 @@
           }
           if (data.msg_type === 'buy' && data.buy) {
             if (bw) bw.ok++;
+            if (buyMeta && allStats.perIndex[buyMeta.indexLabel]) { allStats.perIndex[buyMeta.indexLabel].ok++; allStats.ok++; }
             showToast('Trade placed \u2014 contract #' + data.buy.contract_id + ' at ' + data.buy.buy_price, false);
             if (buyMeta) pendingSettlements[data.buy.contract_id] = { indexLabel: buyMeta.indexLabel, stake: buyMeta.stake, at: Date.now() };
           }
@@ -3082,7 +3128,7 @@
       function isActiveWorker(w) {
         var ready = window.DerivPool.readyWorkers();
         var idx = ready.indexOf(w);
-        return idx !== -1 && idx < workersForRisk();
+        return idx !== -1 && idx < (isAllMode() ? ALL_WORKERS : workersForRisk());
       }
 
       function workerLoop(w) {
@@ -3094,6 +3140,9 @@
       function startAutoTrading() {
         if (trading) return;
         trading = true;
+        allStats.ok = 0; allStats.failed = 0; allStats.skippedFunds = 0; allCursor = 0;
+        allStartFunds = null;   // re-read from the balance on the first buy of this run
+        ALL_INDICES.forEach(function (l) { allStats.perIndex[l] = { ok: 0, failed: 0 }; });
         runBaseline = totalWins - totalLosses;   // the target counts profit made from this switch-on
         window.DerivPool.halted = '';
         window.DerivPool.lastError = '';
