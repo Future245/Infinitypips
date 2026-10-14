@@ -2252,8 +2252,15 @@
 
     function selectOption(value) {
       const data = modalData[activeModal];
+      var previous = data.selected;
       data.selected = value;
       document.getElementById(data.displayId).textContent = value;
+      // All Volatility Indices starts in High Risk (its default); Risk Options stays free to change.
+      if (activeModal === 'index' && value === 'All Volatility Indices' && previous !== value) {
+        modalData.risk.selected = 'High Risk';
+        var riskEl = document.getElementById(modalData.risk.displayId);
+        if (riskEl) riskEl.textContent = 'High Risk';
+      }
       closeModal();
     }
 
@@ -2926,6 +2933,14 @@
       // Two workers run it by default (about 12 buys/s together, 6 each).
       var ALL_LABEL = 'All Volatility Indices';
       var ALL_WORKERS = 2;
+      // Combined buys per second for the whole strategy (all workers together),
+      // set by the Risk Options. Targets only - Deriv's limits can slow it down.
+      var ALL_RATE = { 'Smart Risk': 7, 'High Risk': 10, 'Aggressive Mode': 20 };
+      function allTargetRate() {
+        var label = (typeof modalData !== 'undefined' && modalData.risk && modalData.risk.selected) || 'High Risk';
+        return ALL_RATE[label] || ALL_RATE['High Risk'];
+      }
+      window.DerivPool.allTargetRate = allTargetRate;
       var ALL_INDICES = Object.keys(SYMBOL_MAP);    // the 10 indices, standard ones first, then the 1-second ones
       var allCursor = 0;                            // one shared turn counter, so the two workers never pick the same turn
       var allStats = { pending: 0, ok: 0, failed: 0, skippedFunds: 0, perIndex: {} };
@@ -3154,10 +3169,19 @@
         return idx !== -1 && idx < (isAllMode() ? ALL_WORKERS : workersForRisk());
       }
 
+      // Buys per second for ONE worker right now. Normal indices: the adaptive pace.
+      // All Volatility Indices: the combined target split between the active workers,
+      // scaled down by the same adaptive factor when Deriv rate-limits.
+      function currentWorkerRate() {
+        if (!isAllMode()) return paceRate;
+        var active = Math.max(1, Math.min(ALL_WORKERS, window.DerivPool.readyWorkers().length));
+        return Math.max(0.2, (allTargetRate() / active) * (paceRate / MAX_RATE));
+      }
+
       function workerLoop(w) {
         if (!trading) return;
         if (isActiveWorker(w)) placeWorkerTrade(w);
-        workerTimers[w.slot] = setTimeout(function () { workerLoop(w); }, 1000 / paceRate);
+        workerTimers[w.slot] = setTimeout(function () { workerLoop(w); }, 1000 / currentWorkerRate());
       }
 
       function startAutoTrading() {
