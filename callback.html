@@ -100,7 +100,7 @@
   // The slot travels inside `state` (e.g. "s2.<random>") because all four
   // apps share this one callback URL. Each slot keeps its own state,
   // verifier and token, so finishing one app never overwrites another.
-  var slotMatch = /^s([1-4])\./.exec(state);
+  var slotMatch = /^s([1-8])\./.exec(state);
   if (!slotMatch){
     showError('Security check failed (unknown app). Please try logging in again.');
     return;

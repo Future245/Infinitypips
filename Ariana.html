@@ -2599,14 +2599,14 @@
   <script>
     /* -- Worker pool: four separate Deriv apps, one connection each --
        Worker 1 is the main connection above. Workers 2-4 use the tokens
-       saved for App 2-4 (deriv_access_token_N), each with its OWN OTP and
+       saved for App 2-8 (deriv_access_token_N), each with its OWN OTP and
        WebSocket, all on the SAME Deriv account as worker 1. Every worker
        has its own keep-alive and reconnects by itself, so one worker
        dropping never stops the others. */
     (function () {
       var API_BASE = 'https://api.derivws.com';
       var workers = [];
-      for (var s = 1; s <= 4; s++) {
+      for (var s = 1; s <= 8; s++) {
         workers.push({ slot: s, ws: null, status: s === 1 ? 'connecting' : 'idle', cooldownUntil: 0,
                        sent: 0, ok: 0, fail: 0, retries: 0, fatal: false });
       }
@@ -2635,7 +2635,7 @@
         var okN = 0, failN = 0;
         workers.forEach(function (w) { okN += w.ok; failN += w.fail; });
         badge.style.whiteSpace = 'pre-line';
-        badge.textContent = 'Workers ' + up + '/4  ' + workers.map(function (w) {
+        badge.textContent = 'Workers ' + up + '/8  ' + workers.map(function (w) {
           return (isReady(w) ? '●' : '○') + w.slot;
         }).join(' ') + (okN + failN ? '\nTrades ok ' + okN + ' / rejected ' + failN : '') +
           (window.DerivPool.getPace && okN + failN ? '\nPace ' + window.DerivPool.getPace().toFixed(1) + '/s per worker' : '') +
@@ -2935,7 +2935,13 @@
       var ALL_WORKERS = 2;
       // Combined buys per second for the whole strategy (all workers together),
       // set by the Risk Options. Targets only - Deriv's limits can slow it down.
-      var ALL_RATE = { 'Smart Risk': 7, 'High Risk': 10, 'Aggressive Mode': 20 };
+      var ALL_RATE = { 'Smart Risk': 7, 'High Risk': 10, 'Aggressive Mode': 20, 'Nuclear Mode': 40 };
+      // Workers used by All Volatility Indices: 2 normally, all 8 apps in Nuclear Mode
+      // (4 pairs, about 10 buys/s per pair = 40/s, i.e. up to 4 buys/s on each of the 10 indices).
+      function allWorkerCount() {
+        var label = (typeof modalData !== 'undefined' && modalData.risk && modalData.risk.selected) || 'High Risk';
+        return label === 'Nuclear Mode' ? 8 : ALL_WORKERS;
+      }
       function allTargetRate() {
         var label = (typeof modalData !== 'undefined' && modalData.risk && modalData.risk.selected) || 'High Risk';
         return ALL_RATE[label] || ALL_RATE['High Risk'];
@@ -3008,6 +3014,7 @@
         }
         // A contract lasts until the next tick (1s or 2s) plus a little settle time.
         var graceMs = (all || picked.symbol.indexOf('1HZ') !== 0) ? 3500 : 2500;
+        if (all && allWorkerCount() > ALL_WORKERS) graceMs = 2500;   // Nuclear: 40/s only fits under Deriv's 100-open-contracts cap if finished buys are released quickly
         if (openEstimate(graceMs) >= OPEN_GUARD) { guardSkips++; if (all) allCursor--; return; }
         if (!all && !canAfford(getStake())) return;
 
@@ -3166,7 +3173,7 @@
       function isActiveWorker(w) {
         var ready = window.DerivPool.readyWorkers();
         var idx = ready.indexOf(w);
-        return idx !== -1 && idx < (isAllMode() ? ALL_WORKERS : workersForRisk());
+        return idx !== -1 && idx < (isAllMode() ? allWorkerCount() : workersForRisk());
       }
 
       // Buys per second for ONE worker right now. Normal indices: the adaptive pace.
@@ -3174,8 +3181,10 @@
       // scaled down by the same adaptive factor when Deriv rate-limits.
       function currentWorkerRate() {
         if (!isAllMode()) return paceRate;
-        var active = Math.max(1, Math.min(ALL_WORKERS, window.DerivPool.readyWorkers().length));
-        return Math.max(0.2, (allTargetRate() / active) * (paceRate / MAX_RATE));
+        var active = Math.max(1, Math.min(allWorkerCount(), window.DerivPool.readyWorkers().length));
+        var per = allTargetRate() / active;
+        if (allWorkerCount() > ALL_WORKERS) per = Math.min(per, MAX_RATE);   // Nuclear: never push one app past 6/s if some apps are down
+        return Math.max(0.2, per * (paceRate / MAX_RATE));
       }
 
       function workerLoop(w) {

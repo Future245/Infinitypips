@@ -14,7 +14,7 @@
 // here needs manual SQL after deploying.
 //
 // FOUR-APP SUPPORT
-// The portal connects up to four separate Deriv apps ("slots" 1-4), one
+// The portal connects up to eight separate Deriv apps ("slots" 1-8), one
 // after another, all for the SAME Deriv account. The browser says which
 // slot it is finishing (`slot` in the request body); this function picks
 // that slot's App ID from its own environment, so the code exchange always
@@ -31,6 +31,7 @@
 //   DERIV_CLIENT_ID_2  - App ID for slot 2
 //   DERIV_CLIENT_ID_3  - App ID for slot 3
 //   DERIV_CLIENT_ID_4  - App ID for slot 4
+//   DERIV_CLIENT_ID_5..8 - App IDs for slots 5-8 (Nuclear Mode)
 //   DATABASE_URL       - the Neon Postgres connection string
 
 const { Client } = require('pg');
@@ -41,7 +42,7 @@ const ACCOUNTS_URL = 'https://api.derivws.com/trading/v1/options/accounts';
 
 const SESSION_COOKIE = 'app_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
-const MAX_SLOT = 4;
+const MAX_SLOT = 8;
 
 // Slot 1 keeps using the original DERIV_CLIENT_ID variable so existing
 // deployments keep working without any change.
@@ -205,7 +206,7 @@ exports.handler = async function (event) {
       }
       const prevRes = await client.query(
         "SELECT 1 FROM app_connections WHERE app_user_id = $1 AND app_slot = $2 AND status = 'connected'",
-        [sessionAppUserId, slot - 1]
+        [sessionAppUserId, slot > 5 ? 4 : slot - 1]   // Nuclear apps 5-8 only need Apps 1-4 done, in any order
       );
       if (!prevRes.rows.length) {
         await client.query('ROLLBACK');
@@ -273,8 +274,10 @@ exports.handler = async function (event) {
       );
       await client.query('RELEASE SAVEPOINT record_connection');
     } catch (connErr) {
-      if (slot > 1) throw connErr;
-      console.error('Could not record slot 1 connection (is db/app_connections_schema.sql applied?):', connErr.message);
+      // Slots 2-4 must be recorded. Slots 5-8 (Nuclear Mode) stay usable even if
+      // the database has not been widened to 8 slots yet (see db/app_connections_8_slots.sql).
+      if (slot > 1 && slot <= 4) throw connErr;
+      console.error('Could not record slot ' + slot + ' connection (is db/app_connections_schema.sql applied?):', connErr.message);
       await client.query('ROLLBACK TO SAVEPOINT record_connection');
     }
 
