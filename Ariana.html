@@ -2952,11 +2952,33 @@
         for (id in pendingBuys) { m = tradeMeta[id]; if (m) inflight += m.stake; }
         var funds = allStartFunds + ((totalWins - totalLosses) - runBaseline);   // total funds for the strategy
         var count = Math.min(ALL_INDICES.length, Math.floor((funds + 1e-9) / stake));
-        if (count < 1 || free - inflight < stake - 1e-9) { allStats.skippedFunds++; return null; }
+        if (count < 1 || free - inflight < stake - 1e-9) { allStats.skippedFunds++; canAfford(stake); return null; }
         // planned allocation = count x stake, never more than the funds (count <= funds / stake)
         var label = ALL_INDICES[allCursor % count];
         allCursor++;
         return { label: label, symbol: SYMBOL_MAP[label] };
+      }
+
+      // Stakes of open trades are taken off the balance and come back when the
+      // trades settle, so a small balance simply limits how many trades can be
+      // open at once. Buys wait for stakes to come back instead of the bot
+      // stopping. It only stops when the balance is below one stake AND nothing
+      // is left open that could return money.
+      var lowFundsSince = 0;
+      function canAfford(stake) {
+        var free = window.DerivConnection && window.DerivConnection.balanceValue;
+        if (typeof free !== 'number' || isNaN(free)) return true;      // balance not known yet: let Deriv decide
+        var inflight = 0;
+        for (var id in pendingBuys) { var m = tradeMeta[id]; if (m) inflight += m.stake; }
+        if (free - inflight >= stake - 1e-9) { lowFundsSince = 0; return true; }
+        var now = Date.now();
+        if (free < stake - 1e-9 && openEstimate(3500) === 0) {
+          if (!lowFundsSince) lowFundsSince = now;
+          if (now - lowFundsSince > 3000) haltTrading('InsufficientBalance', 'Balance is below the stake of $' + stake + '.');
+        } else {
+          lowFundsSince = 0;
+        }
+        return false;
       }
 
       function placeWorkerTrade(w) {
@@ -2972,6 +2994,7 @@
         // A contract lasts until the next tick (1s or 2s) plus a little settle time.
         var graceMs = (all || picked.symbol.indexOf('1HZ') !== 0) ? 3500 : 2500;
         if (openEstimate(graceMs) >= OPEN_GUARD) { guardSkips++; if (all) allCursor--; return; }
+        if (!all && !canAfford(getStake())) return;
 
         var stake = getStake();
         var currency = (window.DerivConnection && window.DerivConnection.currency) || 'USD';
@@ -3019,8 +3042,8 @@
             var code = data.error.code || '';
             if (code === 'OpenPositionLimit') globalCooldownUntil = Date.now() + 1000;   // account is full: all workers pause briefly
             else if (/RateLimit/i.test(code)) onRateLimited(bw);                           // slow down instead of hammering
-            else if (code === 'InsufficientBalance' && isAllMode()) globalCooldownUntil = Date.now() + 1000;  // funds are tight by design here: wait for settlements instead of stopping
-            else if (/DailyTurnoverLimit|InsufficientBalance/i.test(code)) haltTrading(code, data.error.message);
+            else if (code === 'InsufficientBalance') globalCooldownUntil = Date.now() + 1500;  // wait for open trades to settle and return their stakes
+            else if (/DailyTurnoverLimit/i.test(code)) haltTrading(code, data.error.message);
             else if (/InvalidToken|AuthorizationRequired|AccountDisabled/i.test(code) && bw) bw.cooldownUntil = Date.now() + 30000;
             window.DerivPool.lastError = (code ? code + ': ' : '') + String(data.error.message || '').slice(0, 120);
             showToast('Trade failed: ' + code + ' ' + data.error.message, true);
