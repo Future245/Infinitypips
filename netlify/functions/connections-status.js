@@ -14,7 +14,7 @@
 
 const { Client } = require('pg');
 
-const MAX_SLOT = 4;
+const MAX_SLOT = 8;
 
 function parseCookies(header) {
   const out = {};
