@@ -185,8 +185,25 @@ function home(){var derivConnected=!!sessionStorage.getItem('deriv_access_token'
 var SLOT_COUNT=8;
 var CHECK_SVG='<svg viewBox="0 0 20 20"><path d="m5 10.5 3.2 3.2L15 6.8"/></svg>',LOCK_SVG='<svg viewBox="0 0 20 20"><rect x="4.5" y="9" width="11" height="7.5" rx="2"/><path d="M7 9V6.8a3 3 0 0 1 6 0V9"/></svg>';
 function slotToken(n){return sessionStorage.getItem('deriv_access_token_'+n)||(n===1?sessionStorage.getItem('deriv_access_token'):null);}
-panel.innerHTML='<div class="portal-view"><button class="portal-back" id="portalBack"><svg viewBox="0 0 20 20"><path d="M12 4 6 10l6 6"/></svg>Back</button><div class="portal-kicker">Infinity Pips access gateway</div><h2 class="portal-title">Client Portal</h2><p class="portal-subtitle">Connect your eight Deriv apps, one after another, to unlock your trading workspace.</p><div class="portal-card"><ol class="slot-list" id="slotList"></ol><div id="slotAction"></div><p class="portal-note">You&apos;ll be redirected to Deriv to sign in — your password is never shared with this app. Use the same Deriv account for all eight apps.</p><div class="connection-status" id="connectionStatus"><span></span>Checking…</div></div></div>';
+panel.innerHTML='<div class="portal-view"><button class="portal-back" id="portalBack"><svg viewBox="0 0 20 20"><path d="M12 4 6 10l6 6"/></svg>Back</button><div class="portal-kicker">Infinity Pips access gateway</div><h2 class="portal-title">Client Portal</h2><p class="portal-subtitle">Connect your eight Deriv apps to unlock your trading workspace. After App 1, the rest connect all at once.</p><div class="portal-card"><ol class="slot-list" id="slotList"></ol><div id="slotAction"></div><p class="portal-note">You&apos;ll be redirected to Deriv to sign in — your password is never shared with this app. Use the same Deriv account for all eight apps.</p><div class="connection-status" id="connectionStatus"><span></span>Checking…</div></div></div>';
 document.querySelector('#portalBack').onclick=settings;
+function connectParallel(slots,pill){
+var rowsEl=document.querySelectorAll('#slotList .slot-row');
+slots.forEach(function(n){var r=rowsEl[n-1];if(r){r.className='slot-row active';var sm=r.querySelector('small');if(sm)sm.textContent='Connecting…';}});
+var act=document.querySelector('#slotAction');if(act)act.innerHTML='';
+if(pill){pill.className='connection-status';pill.innerHTML='<span></span>Connecting '+slots.length+' apps at once…';}
+var box=document.createElement('div');box.setAttribute('aria-hidden','true');box.style.cssText='position:fixed;left:-9999px;top:0;width:420px;height:640px;opacity:0;pointer-events:none';document.body.appendChild(box);
+var done={},okCount=0,finished=false;
+function finish(){if(finished)return;finished=true;window.removeEventListener('message',onMsg);clearTimeout(timer);setTimeout(function(){if(box.parentNode)box.parentNode.removeChild(box);},300);
+if(okCount===0){try{localStorage.setItem('par_blocked_at',String(Date.now()));}catch(e){}}
+renderPortal();}
+function onMsg(ev){var d=ev.data;if(ev.origin!==window.location.origin||!d||d.type!=='deriv_slot')return;if(d.slot&&!done[d.slot]){done[d.slot]=true;if(d.ok)okCount++;}
+if(Object.keys(done).length>=slots.length)finish();}
+window.addEventListener('message',onMsg);
+var timer=setTimeout(finish,10000);
+slots.forEach(function(n,k){var f=document.createElement('iframe');f.style.cssText='width:420px;height:640px;border:0';f.setAttribute('tabindex','-1');box.appendChild(f);
+startDerivLogin('portal',n,f).catch(function(err){console.error('Parallel start failed for app '+n+':',err);done[n]=true;if(Object.keys(done).length>=slots.length)finish();});});
+}
 function paint(server,failed){
 var list=document.querySelector('#slotList'),action=document.querySelector('#slotAction'),pill=document.querySelector('#connectionStatus');
 if(!list||!action||!pill)return;
@@ -207,6 +224,14 @@ if(readyCount>=4){var sk=document.createElement('button');sk.id='skipNuclear';sk
 document.querySelector('#connect').onclick=function(){var btn=document.querySelector('#connect');btn.disabled=true;sessionStorage.setItem('auto_chain','1');pill.className='connection-status';pill.innerHTML='<span></span>Connecting App '+active+'…';startDerivLogin('portal',active).catch(function(err){console.error('Deriv login failed to start:',err);btn.disabled=false;pill.innerHTML='<span style="border-color:#ff4d5e;box-shadow:0 0 12px #ff4d5e"></span>Could not start login — try again';});};
 }else{
 action.innerHTML='<div class="slot-done"><span class="slot-done-badge">'+CHECK_SVG+'</span><p>All '+SLOT_COUNT+' apps are connected. Go back and tap Access Robot to open the bot.</p></div>';
+}
+/* Connect-all-at-once: once App 1 is in (it creates the session), apps 2-8 are requested together in hidden frames instead of one after another. Anything that does not finish falls back to the one-by-one flow below. */
+var missing=[];for(i=1;i<=SLOT_COUNT;i++){if(!((i<=4?!!(server&&server.slots&&server.slots[i-1]&&server.slots[i-1].status==='connected'):true)&&!!slotToken(i)))missing.push(i);}
+var parBlockedAt=0;try{parBlockedAt=Number(localStorage.getItem('par_blocked_at')||0);}catch(e){}
+if(!failed&&server&&server.registered&&slotToken(1)&&missing.length>=2&&missing[0]>1&&!sessionStorage.getItem('par_tried')&&Date.now()-parBlockedAt>86400000){
+sessionStorage.setItem('par_tried','1');
+connectParallel(missing,pill);
+return;
 }
 /* Auto-reconnect: the account is already known to the database (server says this app was connected, or we are mid-chain), so go straight to Deriv for the next app. Each app is tried at most twice per browser session so a failure can never loop. */
 var chain=sessionStorage.getItem('auto_chain')==='1';
@@ -274,7 +299,7 @@ initialRoute();
     return base64UrlEncode(digest);
   }
 
-  window.startDerivLogin = async function startDerivLogin(postAuthTarget, slot){
+  window.startDerivLogin = async function startDerivLogin(postAuthTarget, slot, frame){
     slot = Number(slot) || 1;
     if (!DERIV_APP_IDS[slot]){ throw new Error('Unknown app slot: ' + slot); }
     var codeVerifier = randomString(64);
@@ -295,6 +320,7 @@ initialRoute();
       code_challenge_method: 'S256'
     });
 
+    if (frame){ frame.src = DERIV_AUTH_URL + '?' + params.toString(); return; }   // hidden frame: connect without leaving the portal
     window.location.href = DERIV_AUTH_URL + '?' + params.toString();
   };
 })();

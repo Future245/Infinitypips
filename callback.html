@@ -59,7 +59,14 @@
   var title = document.getElementById('title');
   var message = document.getElementById('message');
 
+  // When this page is loaded inside a hidden frame by the portal (all apps
+  // connecting at once), report back to the portal instead of navigating.
+  var framed = false; try { framed = window.parent !== window; } catch (e) {}
+  var framedSlot = null;
+  function tellParent(ok, msg){ try { window.parent.postMessage({ type: 'deriv_slot', slot: framedSlot, ok: ok, message: msg || '' }, window.location.origin); } catch (e) {} }
+
   function showError(msg){
+    if (framed){ tellParent(false, msg); return; }
     spinner.style.display = 'none';
     title.textContent = 'Login failed';
     title.className = 'error';
@@ -72,6 +79,7 @@
   }
 
   function showSuccess(slot){
+    if (framed){ tellParent(true); return; }
     spinner.style.display = 'none';
     title.textContent = slot > 1 ? 'App ' + slot + ' connected!' : 'Connected!';
     message.textContent = 'Redirecting you back to the app…';
@@ -106,6 +114,7 @@
     return;
   }
   var slot = Number(slotMatch[1]);
+  framedSlot = slot;
 
   var storedState = sessionStorage.getItem('deriv_oauth_state_' + slot);
   var codeVerifier = sessionStorage.getItem('deriv_code_verifier_' + slot);
