@@ -936,11 +936,11 @@
        PREDICTION ACCURACY — instrument dial
     ══════════════════════════════════════════ */
     /* keeps the dial's slot the same height the old loader used, so nothing else in the card shifts */
-    .acc-zone { flex: 0 0 216px; }
+    .acc-zone { display: none !important; }   /* Prediction Accuracy dial removed from view */
 
 
     /* ── Run stopwatch + target congratulations ── */
-    .run-timer{display:flex;align-items:center;justify-content:center;gap:10px;margin:16px auto 0;padding:9px 18px;width:max-content;max-width:100%;border-radius:999px;border:1px solid rgba(0,240,255,.28);background:linear-gradient(180deg,rgba(0,240,255,.10),rgba(155,92,255,.06));box-shadow:0 0 18px -6px rgba(0,240,255,.5),inset 0 1px 0 rgba(255,255,255,.08);font-family:var(--font-head);color:#d9faff;transition:opacity .3s,border-color .3s}
+    .run-timer{flex:none;display:flex;align-items:center;justify-content:center;gap:10px;position:absolute;left:50%;bottom:92px;transform:translateX(-50%);margin:0;z-index:2;padding:9px 18px;width:max-content;max-width:100%;border-radius:999px;border:1px solid rgba(0,240,255,.28);background:linear-gradient(180deg,rgba(0,240,255,.10),rgba(155,92,255,.06));box-shadow:0 0 18px -6px rgba(0,240,255,.5),inset 0 1px 0 rgba(255,255,255,.08);font-family:var(--font-head);color:#d9faff;transition:opacity .3s,border-color .3s}
     .run-timer .rt-dot{width:8px;height:8px;border-radius:50%;background:#5b6b8c;box-shadow:0 0 0 3px rgba(91,107,140,.2)}
     .run-timer.live .rt-dot{background:var(--green);box-shadow:0 0 0 3px rgba(0,255,136,.18),0 0 10px var(--green);animation:rtPulse 1s ease-in-out infinite}
     .run-timer.done{border-color:rgba(0,255,136,.5)}
