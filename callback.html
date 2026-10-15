@@ -4,11 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Infinity Pips</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
   :root{ box-sizing:border-box; color-scheme:dark; }
   *{ box-sizing:inherit; margin:0; padding:0; }
   body{
-    font-family:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
+    font-family:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
     background:radial-gradient(120% 70% at 50% 0%,#0b1a33 0%,#000 62%);
     color:#f5f7fa;
     min-height:100vh;
@@ -45,6 +48,17 @@
     text-decoration:none;
     font-weight:700;
   }
+
+ .ipl-status{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;margin-top:6px;padding:0 18px 0 16px;border-radius:18px;border:1px solid rgba(168,209,255,.16);background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));text-align:left}
+ .ipl-dot{position:relative;flex:none;width:9px;height:9px;border-radius:50%;background:#e6f1ff;box-shadow:0 0 10px rgba(230,241,255,.8)}
+ .ipl-dot::after{content:"";position:absolute;inset:0;border-radius:inherit;background:#e6f1ff}
+ .ipl-msg{flex:1;min-width:0;font:500 12.5px/1.35 'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;letter-spacing:.02em;color:#eaf0f7;transition:opacity .25s ease,transform .25s ease}
+ .ipl-msg.out{opacity:0;transform:translateY(4px)}
+ .ipl-tag{flex:none;font:500 10px/1 'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;letter-spacing:.16em;color:#8e99a8}
+@media (prefers-reduced-motion:no-preference){ .ipl-dot::after{animation:iplPing 1.8s ease-out infinite}}
+@media (prefers-reduced-motion:reduce){ .ipl-msg{transition:none}}
+@media (max-width:340px){ .ipl-tag{display:none}}
+@keyframes iplPing{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.6);opacity:0}}
 </style>
 </head>
 <body>
@@ -54,16 +68,23 @@
   <h1 id="title">Preparing Your Trading Workspace</h1>
   <p id="message">Please wait a moment while we complete your secure sign-in.</p>
   <div class="bar" id="spinner" role="progressbar" aria-label="Preparing workspace"></div>
+  <div class="ipl-status"><span class="ipl-dot" aria-hidden="true"></span><span class="ipl-msg" id="iplMsg" aria-live="off">Verifying access...</span><span class="ipl-tag" aria-hidden="true">SECURE</span></div>
 </div>
 
 <script>
 (function(){
+  var MSGS=['Verifying access...','Initializing your workspace...','Checking...'],idx=0,tm=null,sw=null;
+  function iplStop(){if(tm){clearInterval(tm);tm=null;}if(sw){clearTimeout(sw);sw=null;}}
+  function iplStart(){var el=document.getElementById('iplMsg');if(!el)return;iplStop();idx=0;el.className='ipl-msg';el.textContent=MSGS[0];tm=setInterval(function(){idx=(idx+1)%MSGS.length;el.classList.add('out');sw=setTimeout(function(){el.textContent=MSGS[idx];el.classList.remove('out');},250);},2200);}
+  iplStart();
   var box = document.getElementById('box');
   var spinner = document.getElementById('spinner');
   var title = document.getElementById('title');
   var message = document.getElementById('message');
 
   function showError(msg){
+    iplStop();
+    var st = document.querySelector('.ipl-status'); if (st) st.style.display = 'none';
     spinner.style.display = 'none';
     document.getElementById('orb').style.display = 'none';
     title.textContent = 'Connection interrupted';
@@ -82,6 +103,7 @@
     var target = sessionStorage.getItem('deriv_post_auth_target') || 'portal';
     sessionStorage.removeItem('deriv_post_auth_target');
     var destination = target === 'robot' ? '/Ariana.html' : '/';
+    iplStop();
     window.location.replace(destination + '?deriv_connected=1&slot=' + slot);
   }
 
