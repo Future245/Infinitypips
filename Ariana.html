@@ -3014,7 +3014,7 @@
         }
         // A contract lasts until the next tick (1s or 2s) plus a little settle time.
         var graceMs = (all || picked.symbol.indexOf('1HZ') !== 0) ? 3500 : 2500;
-        if (all && allWorkerCount() > ALL_WORKERS) graceMs = 2500;   // Nuclear: 40/s only fits under Deriv's 100-open-contracts cap if finished buys are released quickly
+        if ((all && allWorkerCount() > ALL_WORKERS) || (!all && workersForRisk() >= 8)) graceMs = 2500;   // Nuclear: 40/s only fits under Deriv's 100-open-contracts cap if finished buys are released quickly
         if (openEstimate(graceMs) >= OPEN_GUARD) { guardSkips++; if (all) allCursor--; return; }
         if (!all && !canAfford(getStake())) return;
 
@@ -3162,10 +3162,11 @@
       function isTrading() { return trading; }
 
       // Risk Options decide how many workers trade at once:
-      //   Smart Risk -> 1 worker (6 buys/s), High Risk -> 3 (18/s), Aggressive Mode -> 4 (24/s).
+      //   Smart Risk -> 1 worker (6 buys/s), High Risk -> 3 (18/s), Aggressive Mode -> 4 (24/s),
+      //   Nuclear Mode -> all 8 apps (8 x 6 = about 48 buys/s on the selected index).
       // The trading workers are the first N that are connected, in App order, so
       // if a worker is down the next one steps in and the count stays the same.
-      var RISK_WORKERS = { 'Smart Risk': 1, 'High Risk': 3, 'Aggressive Mode': 4 };
+      var RISK_WORKERS = { 'Smart Risk': 1, 'High Risk': 3, 'Aggressive Mode': 4, 'Nuclear Mode': 8 };
       function workersForRisk() {
         var label = (typeof modalData !== 'undefined' && modalData.risk && modalData.risk.selected) || 'Smart Risk';
         return RISK_WORKERS[label] || 1;
