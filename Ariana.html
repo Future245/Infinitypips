@@ -939,6 +939,9 @@
     .acc-zone { display: none !important; }   /* Prediction Accuracy dial removed from view */
 
 
+
+    .stake-info{margin:8px 4px 0;font:700 11px var(--font-body);letter-spacing:.06em;color:#7fe9f5;text-shadow:0 0 8px rgba(0,240,255,.35);line-height:1.35}
+    .stake-info.warn{color:#ff6f91;text-shadow:0 0 8px rgba(255,0,85,.35)}
     /* ── Run stopwatch + target congratulations ── */
     .run-timer{flex:none;display:flex;align-items:center;justify-content:center;gap:10px;position:absolute;left:50%;bottom:92px;transform:translateX(-50%);margin:0;z-index:2;padding:9px 18px;width:max-content;max-width:100%;border-radius:999px;border:1px solid rgba(0,240,255,.28);background:linear-gradient(180deg,rgba(0,240,255,.10),rgba(155,92,255,.06));box-shadow:0 0 18px -6px rgba(0,240,255,.5),inset 0 1px 0 rgba(255,255,255,.08);font-family:var(--font-head);color:#d9faff;transition:opacity .3s,border-color .3s}
     .run-timer .rt-dot{width:8px;height:8px;border-radius:50%;background:#5b6b8c;box-shadow:0 0 0 3px rgba(91,107,140,.2)}
@@ -2009,12 +2012,15 @@
             </div>
 
 
-  <!-- Min Lot Size -->
+  <!-- Target Net Profit (replaces the manual stake) -->
           <div class="form-group">
               <label>
                   <span class="label-icon dollar-icon" aria-hidden="true">$</span>
-                  Min Lot Size</label>
-              <input type="number" id="min-lot-input" step="0.35" min="0.35" inputmode="decimal" placeholder="min 0.35" />
+                  Target Net Profit</label>
+              <div class="select-wrapper" onclick="openModal('profit')" style="cursor:pointer;">
+                <div id="profit-display">$1 net profit</div>
+              </div>
+              <div class="stake-info" id="stake-info" aria-live="polite">Stake: calculating…</div>
             </div>
 
           </div>
@@ -2247,6 +2253,12 @@
         selected: 'Smart Risk',
         items: ['Smart Risk','High Risk','Aggressive Mode','Nuclear Mode']
       },
+      profit: {
+        title: 'Target Net Profit',
+        displayId: 'profit-display',
+        selected: '$1 net profit',
+        items: Array.from({ length: 50 }, (_, k) => '$' + (k + 1) + ' net profit')
+      },
       target: {
         title: 'Account Target',
         displayId: 'target-display',
@@ -2288,6 +2300,7 @@
         if (riskEl) riskEl.textContent = 'High Risk';
       }
       closeModal();
+      if (window.refreshStakeInfo) window.refreshStakeInfo(true);
     }
 
     function closeModal() {
@@ -2547,6 +2560,7 @@
             if (data && data.msg_type === 'balance' && data.balance) {
               window.DerivConnection.currency = data.balance.currency;
               window.DerivConnection.balanceValue = Number(data.balance.balance);
+              window.DerivConnection.balanceAt = Date.now();
               if (balanceEl) balanceEl.textContent = formatBalance(data.balance.balance, data.balance.currency);
             }
           });
@@ -2987,11 +3001,106 @@
         return { label: label, symbol: SYMBOL_MAP[label] };
       }
 
-      function getStake() {
-        var input = document.getElementById('min-lot-input');
-        var val = parseFloat(input && input.value);
-        if (!val || isNaN(val) || val < 0.35) val = 0.35;
-        return val;
+      // ---- Target net profit -> stake ----
+      // The user picks the NET profit wanted from each winning buy. The stake is
+      // calculated from the contract's real return, never typed in:
+      //     net return = (payout - cost) / cost      (read from a Deriv proposal)
+      //     stake      = target net profit / net return, rounded UP to the cent
+      var RATE_PROBE_AMOUNT = 100;      // probe size, so the payout is precise to a few ten-thousandths
+      var RATE_MAX_AGE = 120000;        // a return older than this is not trusted for buying
+      var RATE_REFRESH_MS = 30000;
+      var payoutRates = {};             // symbol -> { rate, at }
+      var pendingRates = {};            // req_id -> symbol
+      var lastRateAsk = {};             // symbol -> last request time
+      var MIN_STAKE = 0.35;
+
+      function getTargetProfit() {
+        var label = (typeof modalData !== 'undefined' && modalData.profit && modalData.profit.selected) || '';
+        var n = parseFloat(String(label).replace(/[^0-9.]/g, ''));
+        return (isNaN(n) || n <= 0) ? 1 : n;
+      }
+      function rateFor(symbol) {
+        var r = payoutRates[symbol];
+        if (!r || !isFinite(r.rate) || r.rate <= 0.005 || r.rate > 5) return null;
+        if (Date.now() - r.at > RATE_MAX_AGE) return null;
+        return r.rate;
+      }
+      function stakeFromRate(target, rate) {
+        var stake = Math.ceil(target / rate * 100 - 1e-6) / 100;
+        if (stake * rate < target - 1e-9) stake = Math.round((stake + 0.01) * 100) / 100;   // never fall short of the target
+        return Math.max(MIN_STAKE, stake);
+      }
+      // Stake for one symbol, or null when its return is unknown / too old / invalid.
+      function stakeForSymbol(symbol) {
+        var rate = rateFor(symbol);
+        if (rate === null) return null;
+        var stake = stakeFromRate(getTargetProfit(), rate);
+        return (isFinite(stake) && stake > 0) ? stake : null;
+      }
+      function symbolsInUse() {
+        return isAllMode() ? ALL_INDICES.map(function (l) { return SYMBOL_MAP[l]; }) : [getSelectedSymbol().symbol];
+      }
+      // Highest stake among the indices in use (null if any return is unknown).
+      function stakeInUse() {
+        var syms = symbolsInUse(), max = 0, i, st;
+        for (i = 0; i < syms.length; i++) {
+          st = stakeForSymbol(syms[i]);
+          if (st === null) return null;
+          if (st > max) max = st;
+        }
+        return max || null;
+      }
+      function requestRate(symbol) {
+        if (!symbol) return;
+        var now = Date.now();
+        if (now - (lastRateAsk[symbol] || 0) < 1500) return;
+        var ready = window.DerivPool.readyWorkers();
+        if (!ready.length) return;
+        lastRateAsk[symbol] = now;
+        var reqId = nextReqId();
+        pendingRates[reqId] = symbol;
+        window.DerivPool.send(ready[0], {
+          proposal: 1, amount: RATE_PROBE_AMOUNT, basis: 'stake', contract_type: 'DIGITDIFF',
+          currency: (window.DerivConnection && window.DerivConnection.currency) || 'USD',
+          duration: 1, duration_unit: 't', barrier: '5', underlying_symbol: symbol, req_id: reqId
+        });
+      }
+      function setRate(symbol, payout, cost) {
+        payout = Number(payout); cost = Number(cost);
+        if (!isFinite(payout) || !isFinite(cost) || cost <= 0 || payout <= cost) return false;
+        var rate = (payout - cost) / cost;
+        if (rate <= 0.005 || rate > 5) return false;
+        payoutRates[symbol] = { rate: rate, at: Date.now() };
+        return true;
+      }
+      var stakeWarnUntil = 0;
+      function refreshStakeInfo(ask) {
+        var el = document.getElementById('stake-info');
+        var target = getTargetProfit();
+        if (ask) symbolsInUse().forEach(requestRate);
+        if (!el) return;
+        if (Date.now() < stakeWarnUntil && el.dataset.warn) return;   // keep a balance warning visible for a moment
+        var syms = symbolsInUse(), stake = stakeInUse(), rate = rateFor(syms[0]);
+        el.classList.remove('warn'); delete el.dataset.warn;
+        if (stake === null || rate === null) { el.textContent = 'Target $' + target + ' net profit  \u2022  stake: calculating\u2026'; return; }
+        el.textContent = 'Target $' + target + ' net profit  \u2022  stake $' + stake.toFixed(2) + (isAllMode() ? ' per buy (max)' : '') + '  \u2022  net return ' + (rate * 100).toFixed(2) + '%';
+      }
+      function warnStake(msg) {
+        var el = document.getElementById('stake-info');
+        if (el) { el.textContent = msg; el.classList.add('warn'); el.dataset.warn = '1'; stakeWarnUntil = Date.now() + 6000; }
+        var now = Date.now();
+        if (now - (warnStake.last || 0) > 5000) { warnStake.last = now; showToast(msg, true); }
+      }
+      window.refreshStakeInfo = refreshStakeInfo;
+      setInterval(function () { refreshStakeInfo(Date.now() - (lastRateAsk[symbolsInUse()[0]] || 0) > RATE_REFRESH_MS); }, 1000);
+
+      // Latest balance, or null when it is missing or stale (only checked while trading).
+      var BALANCE_MAX_AGE = 25000;
+      function freshBalance() {
+        var c = window.DerivConnection;
+        if (!c || typeof c.balanceValue !== 'number' || isNaN(c.balanceValue)) return null;
+        if (trading && c.balanceAt && Date.now() - c.balanceAt > BALANCE_MAX_AGE) return null;
+        return c.balanceValue;
       }
 
       // Safety valve for Deriv's cap of 100 open contracts per account. All four
@@ -3050,8 +3159,9 @@
       // stakes of buys still waiting for an answer are subtracted here as well.
       var allStartFunds = null;
       function pickAllIndex(stake) {
-        var free = window.DerivConnection && window.DerivConnection.balanceValue;
-        if (typeof free !== 'number' || isNaN(free)) return null;               // balance not known yet
+        if (!stake) return null;                                                // returns not known yet
+        var free = freshBalance();
+        if (free === null) return null;                                         // balance missing or stale
         if (allStartFunds === null) allStartFunds = free;
         var inflight = 0, id, m;
         for (id in pendingBuys) { m = tradeMeta[id]; if (m) inflight += m.stake; }
@@ -3071,15 +3181,21 @@
       // is left open that could return money.
       var lowFundsSince = 0;
       function canAfford(stake) {
-        var free = window.DerivConnection && window.DerivConnection.balanceValue;
-        if (typeof free !== 'number' || isNaN(free)) return true;      // balance not known yet: let Deriv decide
+        var free = freshBalance();
+        if (free === null) {                                           // missing or stale balance: never buy on a guess
+          var c = window.DerivConnection;
+          if (c && c.ws && c.ws.readyState === 1) { try { window.DerivPool.send(window.DerivPool.workers[0], { balance: 1, req_id: 20 }); } catch (e) {} }
+          return false;
+        }
         var inflight = 0;
         for (var id in pendingBuys) { var m = tradeMeta[id]; if (m) inflight += m.stake; }
         if (free - inflight >= stake - 1e-9) { lowFundsSince = 0; return true; }
         var now = Date.now();
+        var msg = 'Insufficient balance: $' + getTargetProfit() + ' net profit needs a $' + stake.toFixed(2) + ' stake, but only $' + free.toFixed(2) + ' is available.';
         if (free < stake - 1e-9 && openEstimate(3500) === 0) {
+          warnStake(msg);
           if (!lowFundsSince) lowFundsSince = now;
-          if (now - lowFundsSince > 3000) haltTrading('InsufficientBalance', 'Balance is below the stake of $' + stake + '.');
+          if (now - lowFundsSince > 3000) haltTrading('InsufficientBalance', msg);
         } else {
           lowFundsSince = 0;
         }
@@ -3090,19 +3206,21 @@
         var now = Date.now();
         if (now < w.cooldownUntil || now < globalCooldownUntil) return;
         var all = isAllMode();
-        var picked = all ? pickAllIndex(getStake()) : getSelectedSymbol();
-        if (all && !picked) return;                  // nothing eligible this turn
+        var picked = all ? pickAllIndex(stakeInUse()) : getSelectedSymbol();
+        if (all && !picked) { if (!stakeInUse()) symbolsInUse().forEach(requestRate); return; }   // nothing eligible this turn
         if (!picked.symbol) {
           showToast('Unknown synthetic index: ' + picked.label, true);
           return;
         }
+        // The stake comes from the target net profit and this index's real return. No reliable return = no buy.
+        var stake = stakeForSymbol(picked.symbol);
+        if (stake === null) { requestRate(picked.symbol); if (all) allCursor--; return; }
         // A contract lasts until the next tick (1s or 2s) plus a little settle time.
         var graceMs = (all || picked.symbol.indexOf('1HZ') !== 0) ? 3500 : 2500;
         if ((all && allWorkerCount() > ALL_WORKERS) || (!all && workersForRisk() >= 8)) graceMs = 2500;   // Nuclear: 40/s only fits under Deriv's 100-open-contracts cap if finished buys are released quickly
         if (openEstimate(graceMs) >= OPEN_GUARD) { guardSkips++; if (all) allCursor--; return; }
-        if (!all && !canAfford(getStake())) return;
-
-        var stake = getStake();
+        if (!all && !canAfford(stake)) return;
+        if (all && !canAfford(stake)) { allCursor--; return; }
         var currency = (window.DerivConnection && window.DerivConnection.currency) || 'USD';
         var reqId = nextReqId();
         // Direct buy: one call per trade (no proposal step).
@@ -3123,7 +3241,7 @@
         });
         if (!sent) return; // this worker is down right now; the others carry on
         pendingBuys[reqId] = true;
-        tradeMeta[reqId] = { indexLabel: picked.label, stake: stake, slot: w.slot, at: now };
+        tradeMeta[reqId] = { indexLabel: picked.label, stake: stake, slot: w.slot, at: now, symbol: picked.symbol };
         w.sent++;
         if (!runStartPerf || runStopped) runClockStart();   // stopwatch starts with the first buy
       }
@@ -3138,6 +3256,14 @@
       }
 
       function handleTradeMessage(data) {
+        if (pendingRates[data.req_id]) {
+          var rsym = pendingRates[data.req_id];
+          delete pendingRates[data.req_id];
+          if (!data.error && data.proposal) setRate(rsym, data.proposal.payout, data.proposal.ask_price);
+          else if (data.error) window.DerivPool.lastError = 'Return lookup failed: ' + String(data.error.message || '').slice(0, 100);
+          refreshStakeInfo(false);
+          return;
+        }
         if (pendingBuys[data.req_id]) {
           delete pendingBuys[data.req_id];
           var buyMeta = tradeMeta[data.req_id];
@@ -3161,6 +3287,8 @@
             if (buyMeta && allStats.perIndex[buyMeta.indexLabel]) { allStats.perIndex[buyMeta.indexLabel].ok++; allStats.ok++; }
             showToast('Trade placed \u2014 contract #' + data.buy.contract_id + ' at ' + data.buy.buy_price, false);
             if (buyMeta) pendingSettlements[data.buy.contract_id] = { indexLabel: buyMeta.indexLabel, stake: buyMeta.stake, at: Date.now() };
+            // Deriv's own buy answer carries the real cost and payout: keep the return fresh from it (only precise for larger stakes).
+            if (buyMeta && buyMeta.symbol && Number(data.buy.buy_price) >= 50) setRate(buyMeta.symbol, data.buy.payout, data.buy.buy_price);
           }
           return;
         }
@@ -3287,6 +3415,8 @@
         ALL_INDICES.forEach(function (l) { allStats.perIndex[l] = { ok: 0, failed: 0 }; });
         runBaseline = totalWins - totalLosses;   // the target counts profit made from this switch-on
         runStartPerf = 0; runElapsed = 0; runStopped = true; paintRunClock();
+        lowFundsSince = 0;
+        symbolsInUse().forEach(function (sy, i) { lastRateAsk[sy] = 0; setTimeout(function () { requestRate(sy); }, i * 120); });   // fresh returns before the first buy
         var rtEl = document.getElementById('run-timer'); if (rtEl) rtEl.classList.remove('live', 'done');
         var cgBox = document.getElementById('congrats'); if (cgBox) cgBox.classList.remove('show');
         window.DerivPool.halted = '';
