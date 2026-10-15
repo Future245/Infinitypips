@@ -938,6 +938,30 @@
     /* keeps the dial's slot the same height the old loader used, so nothing else in the card shifts */
     .acc-zone { flex: 0 0 216px; }
 
+
+    /* ── Run stopwatch + target congratulations ── */
+    .run-timer{display:flex;align-items:center;justify-content:center;gap:10px;margin:16px auto 0;padding:9px 18px;width:max-content;max-width:100%;border-radius:999px;border:1px solid rgba(0,240,255,.28);background:linear-gradient(180deg,rgba(0,240,255,.10),rgba(155,92,255,.06));box-shadow:0 0 18px -6px rgba(0,240,255,.5),inset 0 1px 0 rgba(255,255,255,.08);font-family:var(--font-head);color:#d9faff;transition:opacity .3s,border-color .3s}
+    .run-timer .rt-dot{width:8px;height:8px;border-radius:50%;background:#5b6b8c;box-shadow:0 0 0 3px rgba(91,107,140,.2)}
+    .run-timer.live .rt-dot{background:var(--green);box-shadow:0 0 0 3px rgba(0,255,136,.18),0 0 10px var(--green);animation:rtPulse 1s ease-in-out infinite}
+    .run-timer.done{border-color:rgba(0,255,136,.5)}
+    .run-timer .rt-label{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#7fe9f5;opacity:.85}
+    .run-timer .rt-time{font-size:13px;font-weight:700;letter-spacing:.06em;font-variant-numeric:tabular-nums;text-shadow:0 0 10px rgba(0,240,255,.5)}
+    @keyframes rtPulse{50%{opacity:.35}}
+    .congrats{position:fixed;inset:0;z-index:10000;display:none;align-items:center;justify-content:center;padding:22px;background:radial-gradient(70% 55% at 50% 45%,rgba(0,240,255,.14),rgba(2,5,16,.86) 70%);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+    .congrats.show{display:flex;animation:cgIn .45s cubic-bezier(.2,.9,.3,1.2)}
+    @keyframes cgIn{from{opacity:0;transform:scale(.88) translateY(14px)}to{opacity:1;transform:none}}
+    .congrats-card{position:relative;width:min(92vw,360px);padding:30px 22px 22px;text-align:center;border-radius:28px;border:1px solid rgba(0,240,255,.35);background:linear-gradient(165deg,#10224f 0%,#0a1330 55%,#050a1e 100%);box-shadow:0 0 60px -10px rgba(0,240,255,.55),0 30px 60px -20px #000,inset 0 1px 0 rgba(255,255,255,.12);overflow:hidden}
+    .congrats-card:before{content:"";position:absolute;inset:-60% -20% auto;height:90%;background:radial-gradient(closest-side,rgba(0,255,136,.28),transparent);pointer-events:none}
+    .congrats-icon{position:relative;font-size:46px;line-height:1;filter:drop-shadow(0 0 16px rgba(255,200,60,.7))}
+    .congrats-title{position:relative;margin:12px 0 6px;font:900 21px var(--font-head);letter-spacing:.08em;text-transform:uppercase;background:linear-gradient(90deg,var(--cyan),#fff,var(--green));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+    .congrats-sub{position:relative;margin:0;font:600 15px var(--font-body);color:#b6c9ee}
+    .congrats-time{position:relative;margin:18px 0 4px;font:900 clamp(24px,8.5vw,32px) var(--font-head);letter-spacing:.04em;font-variant-numeric:tabular-nums;color:#eafcff;text-shadow:0 0 22px rgba(0,240,255,.7)}
+    .congrats-cap{position:relative;font:700 9px var(--font-head);letter-spacing:.24em;text-transform:uppercase;color:#7fe9f5}
+    .congrats-stats{position:relative;display:flex;justify-content:center;gap:10px;margin:16px 0 0}
+    .congrats-stats span{padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);font:700 11px var(--font-body);letter-spacing:.06em;color:#cfe3ff}
+    .congrats-btn{position:relative;margin-top:20px;width:100%;padding:13px;border:0;border-radius:16px;cursor:pointer;font:800 12px var(--font-head);letter-spacing:.16em;text-transform:uppercase;color:#03161c;background:linear-gradient(135deg,var(--cyan),#3aa8ff 55%,var(--green));box-shadow:0 10px 26px -8px rgba(0,240,255,.8),inset 0 1px 0 rgba(255,255,255,.5)}
+    .congrats-btn:active{transform:scale(.98)}
+
     .prediction-label {
       text-align: center;
       font-family: var(--font-head);
@@ -2039,6 +2063,8 @@
             </div>
           </div>
 
+          <div class="run-timer" id="run-timer" aria-live="off"><i class="rt-dot"></i><span class="rt-label">Run time</span><span class="rt-time" id="run-time">0 ms</span></div>
+
           <!-- Prediction Accuracy -->
           <div class="acc-zone">
           <div class="prediction-label">Prediction Accuracy</div>
@@ -2846,6 +2872,62 @@
       // Account Target: once the profit made in this run (wins minus losses on
       // settled trades) reaches the chosen target, stop trading and switch off.
       var runBaseline = 0;
+
+      // ---- Run stopwatch ----
+      // Starts the moment the first buy is sent, stops when the target is reached
+      // (or the switch is turned off), and the target time is shown in a congratulations card.
+      var runStartPerf = 0, runElapsed = 0, runClockTimer = null, runStopped = true;
+      function formatElapsed(ms) {
+        ms = Math.max(0, Math.round(ms));
+        if (ms < 1000) return ms + ' ms';
+        var totalS = ms / 1000;
+        if (totalS < 60) return totalS.toFixed(3) + ' s';
+        var d = Math.floor(ms / 86400000); ms -= d * 86400000;
+        var h = Math.floor(ms / 3600000); ms -= h * 3600000;
+        var m = Math.floor(ms / 60000); ms -= m * 60000;
+        var sec = (ms / 1000).toFixed(3);
+        var out = [];
+        if (d) out.push(d + ' d');
+        if (d || h) out.push(h + ' h');
+        out.push(m + ' min');
+        out.push(sec + ' s');
+        return out.join(' ');
+      }
+      function paintRunClock() {
+        var el = document.getElementById('run-time');
+        if (!el) return;
+        if (!runStopped && runStartPerf) runElapsed = performance.now() - runStartPerf;
+        el.textContent = formatElapsed(runElapsed);
+      }
+      function runClockStart() {
+        if (runStartPerf && !runStopped) return;
+        runStartPerf = performance.now(); runElapsed = 0; runStopped = false;
+        var t = document.getElementById('run-timer'); if (t) { t.classList.add('live'); t.classList.remove('done'); }
+        if (runClockTimer) clearInterval(runClockTimer);
+        runClockTimer = setInterval(paintRunClock, 47);
+        paintRunClock();
+      }
+      function runClockStop(done) {
+        if (runStopped) return runElapsed;
+        if (runStartPerf) runElapsed = performance.now() - runStartPerf;
+        runStopped = true;
+        if (runClockTimer) { clearInterval(runClockTimer); runClockTimer = null; }
+        var t = document.getElementById('run-timer'); if (t) { t.classList.remove('live'); if (done) t.classList.add('done'); }
+        paintRunClock();
+        return runElapsed;
+      }
+      function showCongrats(target, elapsed) {
+        var box = document.getElementById('congrats'); if (!box) return;
+        document.getElementById('cg-sub').textContent = 'Your $' + target + ' account target was reached';
+        document.getElementById('cg-time').textContent = formatElapsed(elapsed);
+        var okN = 0; window.DerivPool.workers.forEach(function (w) { okN += w.ok; });
+        document.getElementById('cg-stats').innerHTML = '<span>' + okN + ' trades</span><span>' + (okN && elapsed > 0 ? (okN / (elapsed / 1000)).toFixed(1) : '0') + ' buys/s</span>';
+        box.classList.add('show');
+      }
+      document.addEventListener('click', function (e) {
+        var box = document.getElementById('congrats');
+        if (box && (e.target === box || (e.target.closest && e.target.closest('#cg-close')))) box.classList.remove('show');
+      });
       function getTargetAmount() {
         var label = (typeof modalData !== 'undefined' && modalData.target && modalData.target.selected) || '';
         var n = parseFloat(String(label).replace(/[^0-9.]/g, ''));
@@ -2855,7 +2937,9 @@
         if (!trading) return;
         var target = getTargetAmount();
         if (target > 0 && (totalWins - totalLosses) - runBaseline >= target) {
+          var took = runClockStop(true);
           haltTrading('TargetReached', 'Account target of $' + target + ' reached.');
+          showCongrats(target, took);
         }
       }
 
@@ -3041,6 +3125,7 @@
         pendingBuys[reqId] = true;
         tradeMeta[reqId] = { indexLabel: picked.label, stake: stake, slot: w.slot, at: now };
         w.sent++;
+        if (!runStartPerf || runStopped) runClockStart();   // stopwatch starts with the first buy
       }
 
       if (window.DerivConnection) {
@@ -3201,6 +3286,9 @@
         allStartFunds = null;   // re-read from the balance on the first buy of this run
         ALL_INDICES.forEach(function (l) { allStats.perIndex[l] = { ok: 0, failed: 0 }; });
         runBaseline = totalWins - totalLosses;   // the target counts profit made from this switch-on
+        runStartPerf = 0; runElapsed = 0; runStopped = true; paintRunClock();
+        var rtEl = document.getElementById('run-timer'); if (rtEl) rtEl.classList.remove('live', 'done');
+        var cgBox = document.getElementById('congrats'); if (cgBox) cgBox.classList.remove('show');
         window.DerivPool.halted = '';
         window.DerivPool.lastError = '';
         window.DerivPool.workers.forEach(function (w) { w.ok = 0; w.fail = 0; w.sent = 0; });
@@ -3215,6 +3303,7 @@
 
       function stopAutoTrading() {
         trading = false;
+        runClockStop(false);
         workerTimers.forEach(function (t) { if (t) clearTimeout(t); });
         workerTimers = [];
         // Trades already in flight keep running to settlement \u2014 only new
@@ -3240,5 +3329,6 @@
       }
     })();
   </script>
+<div class="congrats" id="congrats" role="dialog" aria-modal="true" aria-labelledby="cg-title"><div class="congrats-card"><div class="congrats-icon">🏆</div><h2 class="congrats-title" id="cg-title">Congratulations!</h2><p class="congrats-sub" id="cg-sub">Account target reached</p><div class="congrats-time" id="cg-time">0 ms</div><div class="congrats-cap">Time to reach your target</div><div class="congrats-stats" id="cg-stats"></div><button class="congrats-btn" id="cg-close" type="button">Awesome</button></div></div>
 </body>
 </html>
