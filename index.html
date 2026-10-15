@@ -954,6 +954,31 @@ input:disabled{color:rgb(var(--disabled));border-color:rgb(var(--line)/.12);back
   .robot-svg{transform:none}
   .ring::before{transform:none}
 }
+
+/* ===== Robot preparation screen (replaces the per-app checklist) ===== */
+.prep-card{align-items:center;text-align:center;gap:18px;padding:32px 20px 24px}
+.prep-orb{position:relative;display:grid;place-items:center;width:104px;height:104px;margin:4px 0 2px}
+.prep-ring{position:absolute;inset:0;border-radius:50%;border:1.5px solid rgb(var(--brand-2)/.35);box-shadow:0 0 28px rgb(var(--brand)/.35),inset 0 0 22px rgb(var(--brand)/.18)}
+.prep-ring.r2{inset:14px;border-color:rgb(var(--brand)/.45)}
+.prep-inf{position:relative;width:52px;height:26px;fill:none;stroke:rgb(var(--brand-2));stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 8px rgb(var(--brand)/.9))}
+.prep-title{margin:0;font:800 clamp(1.4rem,6.6vw,1.75rem)/1.15 var(--font-display);letter-spacing:-.02em;color:rgb(var(--text))}
+.prep-text{margin:0;max-width:320px;font-size:.9375rem;line-height:1.6;color:rgb(var(--text-2))}
+.prep-bar{position:relative;width:100%;height:8px;border-radius:99px;overflow:hidden;background:rgb(var(--hi)/.07);border:1px solid rgb(var(--line)/.16)}
+.prep-bar i{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:inherit;background:linear-gradient(90deg,rgb(var(--brand-deep)),rgb(var(--brand)),rgb(var(--brand-2)));box-shadow:0 0 14px rgb(var(--brand)/.7);transition:width .6s var(--ease-out)}
+.prep-bar.done i{background:linear-gradient(90deg,rgb(var(--ok)/.7),rgb(var(--ok)))}
+.prep-bar.busy::after{content:"";position:absolute;top:0;bottom:0;width:38%;background:linear-gradient(90deg,transparent,rgb(var(--hi)/.55),transparent)}
+.prep-ghost{width:100%;margin-top:10px;padding:12px;border-radius:14px;border:1px solid rgb(var(--hi)/.14);background:rgb(var(--hi)/.04);color:rgb(var(--text-2));font:600 .85rem var(--font-body);cursor:pointer}
+.prep-card #slotAction{width:100%}
+.prep-card .connection-status,.prep-card .portal-note{width:100%;text-align:left}
+@media (prefers-reduced-motion:no-preference){
+.prep-ring{animation:prepPulse 2.8s ease-in-out infinite}
+.prep-ring.r2{animation-delay:-1.4s}
+.prep-inf{animation:prepGlow 2.4s ease-in-out infinite}
+.prep-bar.busy::after{animation:prepSweep 1.5s ease-in-out infinite}
+}
+@keyframes prepPulse{0%,100%{transform:scale(.94);opacity:.65}50%{transform:scale(1.04);opacity:1}}
+@keyframes prepGlow{0%,100%{filter:drop-shadow(0 0 5px rgb(var(--brand)/.6))}50%{filter:drop-shadow(0 0 14px rgb(var(--brand-2)/.95))}}
+@keyframes prepSweep{0%{left:-40%}100%{left:102%}}
 </style>
 </head>
 <body>
@@ -1211,51 +1236,73 @@ input:disabled{color:rgb(var(--disabled));border-color:rgb(var(--line)/.12);back
 const panel=document.querySelector('#panel');let key='';const icon=t=>t==='settings'?'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19 13.5l1.4 1.1-1.8 3.1-1.7-.6a7.6 7.6 0 0 1-2.1 1.2l-.3 1.9H9.5l-.3-1.9a7.6 7.6 0 0 1-2.1-1.2l-1.7.6-1.8-3.1L5 13.5a7 7 0 0 1 0-3L3.6 9.4l1.8-3.1 1.7.6a7.6 7.6 0 0 1 2.1-1.2l.3-1.9h3.6l.3 1.9a7.6 7.6 0 0 1 2.1 1.2l1.7-.6L19 9.4l-1.4 1.1a7 7 0 0 1 0 3Z"/></svg>':'<svg viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="13" rx="3"/><path d="M12 7V3m-2 0h4M8 12h.1M16 12h.1M9 16h6M5 13H2m20 0h-3"/></svg>';
 function home(){var derivConnected=!!sessionStorage.getItem('deriv_access_token');panel.innerHTML=`<span class="ring" aria-hidden="true"></span><div class="heading is-license"><span class="num">01</span><div><strong>License</strong><small>Unlock your automated edge</small></div><i class="dot"></i></div><button class="card settings" id="settings" type="button"><span class="sheen" aria-hidden="true"></span><span class="ring" aria-hidden="true"></span><span class="icon">${icon('settings')}</span><span class="copy"><strong>Settings</strong><small>Manage your license key</small></span><span class="arrow"><svg viewBox="0 0 20 20"><path d="M7 13 13 7M9 7h4v4"/></svg></span></button><div class="status"><span></span>License not activated</div><div class="heading"><span class="num">02</span><div><strong>Infinity Pips</strong><small>Your trading command center</small></div><i class="dot cyan"></i></div><button class="card robot" id="robot" type="button"><span class="sheen" aria-hidden="true"></span><span class="ring" aria-hidden="true"></span><span class="icon">${icon('robot')}</span><span class="copy"><strong>Access Robot</strong><small>Launch your trading workspace</small></span><span class="arrow"><svg viewBox="0 0 20 20"><path d="M7 13 13 7M9 7h4v4"/></svg></span></button><div class="status${derivConnected?' connected':''}" id="derivStatus"><span></span>${derivConnected?'Deriv account connected':'Checking Deriv account…'}</div>`;document.querySelector('#settings').onclick=settings;var robotBtn=document.querySelector('#robot');robotBtn.onclick=function(){var haveAll=[1,2,3,4,5,6,7,8].every(function(n){return sessionStorage.getItem('deriv_access_token_'+n)||(n===1&&sessionStorage.getItem('deriv_access_token'));});if(haveAll){window.location.href='/Ariana.html';return;}robotBtn.disabled=true;fetch('/.netlify/functions/session-status',{credentials:'include'}).then(function(r){return r.json();}).then(function(data){robotBtn.disabled=false;if(data&&data.registered){sessionStorage.setItem('auto_chain','1');sessionStorage.setItem('auto_target','robot');portal();}else{alert('Connect your Deriv account first to launch the robot.');settings();}}).catch(function(err){robotBtn.disabled=false;console.error('Session check failed:',err);alert('Could not verify your account right now. Please try again.');})};if(!derivConnected){fetch('/.netlify/functions/session-status',{credentials:'include'}).then(function(r){return r.json();}).then(function(data){var pill=document.querySelector('#derivStatus');if(!pill)return;if(data&&data.registered){pill.className='status connected';pill.innerHTML='<span></span>Deriv linked — tap Access Robot to resume';}else{pill.className='status';pill.innerHTML='<span></span>Deriv account not connected';}}).catch(function(){var pill=document.querySelector('#derivStatus');if(pill){pill.className='status';pill.innerHTML='<span></span>Deriv account not connected';}});}}function settings(){panel.innerHTML=`<div class="settings-view"><button class="back" id="back"><svg viewBox="0 0 20 20"><path d="M12 4 6 10l6 6"/></svg>Back to dashboard</button><div class="heading"><span class="num">01</span><div><strong>Activate license</strong><small>Connect your Infinity Pips account</small></div></div><label class="label" for="key">Serial key</label><div class="input-wrap"><svg viewBox="0 0 20 20"><path d="M8 12a4 4 0 1 1 3.46-2H18v2h-1.5v2H14v-2h-2.54A4 4 0 0 1 8 12Z"/><circle cx="6" cy="12" r="1.4"/></svg><input id="key" placeholder="XXXX-XXXX-XXXX" maxlength="14" autocomplete="off"></div><p class="key-error" id="keyError" aria-live="polite"></p><button class="activate" id="activate"><span>Activate license</span><svg viewBox="0 0 20 20"><path d="M4 10h11M10 5l5 5-5 5"/></svg></button><p class="helper"><svg viewBox="0 0 20 20"><path d="M10 2 3 5.5v4c0 4.4 3 8.3 7 9.5 4-1.2 7-5.1 7-9.5v-4L10 2Z"/><path d="m7.3 10 1.9 1.9 3.8-3.9"/></svg>Paste the key from your license email.</p></div>`;document.querySelector('#back').onclick=home;document.querySelector('#activate').onclick=async()=>{key=document.querySelector('#key').value.trim();var input=document.querySelector('#key');var btn=document.querySelector('#activate');var errEl=document.querySelector('#keyError');var label=btn.querySelector('span');var labelText=label?label.textContent:'';if(errEl)errEl.textContent='';if(!key){input.focus();return}if(!/^\d{4}-\d{4}-\d{4}$/.test(key)){if(errEl)errEl.textContent='Enter your key as XXXX-XXXX-XXXX.';return}btn.disabled=true;if(label)label.textContent='Verifying…';try{var res=await fetch('/.netlify/functions/verify-serial-key',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key})});var data=await res.json().catch(function(){return{}});if(res.ok&&data&&data.authorized){portal()}else{if(errEl)errEl.textContent='That serial key is not valid. Check it and try again.';btn.disabled=false;if(label)label.textContent=labelText}}catch(err){console.error('Serial key verification failed:',err);if(errEl)errEl.textContent='Could not verify your key right now. Please try again.';btn.disabled=false;if(label)label.textContent=labelText}}}function portal(){panel.innerHTML='<div class="portal-view"><p class="helper" style="margin:40px auto">Verifying access…</p></div>';fetch('/.netlify/functions/portal-status',{credentials:'include'}).then(function(r){return r.json()}).then(function(data){if(data&&data.authorized){renderPortal()}else{settings()}}).catch(function(err){console.error('Portal authorization check failed:',err);settings()})}function renderPortal(){
 var SLOT_COUNT=8;
-var CHECK_SVG='<svg viewBox="0 0 20 20"><path d="m5 10.5 3.2 3.2L15 6.8"/></svg>',LOCK_SVG='<svg viewBox="0 0 20 20"><rect x="4.5" y="9" width="11" height="7.5" rx="2"/><path d="M7 9V6.8a3 3 0 0 1 6 0V9"/></svg>';
 function slotToken(n){return sessionStorage.getItem('deriv_access_token_'+n)||(n===1?sessionStorage.getItem('deriv_access_token'):null);}
-panel.innerHTML='<div class="portal-view"><button class="portal-back" id="portalBack"><svg viewBox="0 0 20 20"><path d="M12 4 6 10l6 6"/></svg>Back</button><div class="portal-kicker">Infinity Pips access gateway</div><h2 class="portal-title">Client Portal</h2><p class="portal-subtitle">Connect your eight Deriv apps, one after another, to unlock your trading workspace.</p><div class="portal-card"><ol class="slot-list" id="slotList"></ol><div id="slotAction"></div><p class="portal-note">You&apos;ll be redirected to Deriv to sign in — your password is never shared with this app. Use the same Deriv account for all eight apps.</p><div class="connection-status" id="connectionStatus"><span></span>Checking…</div></div></div>';
+panel.innerHTML=`<div class="portal-view prep" id="prep"><button class="portal-back" id="portalBack" type="button"><svg viewBox="0 0 20 20"><path d="M12 4 6 10l6 6"/></svg>Back</button><div class="portal-kicker">Infinity Pips access gateway</div><div class="portal-card prep-card"><div class="prep-orb" aria-hidden="true"><span class="prep-ring"></span><span class="prep-ring r2"></span><svg class="prep-inf" viewBox="0 0 48 24"><path d="M24 12C19 5 6 5 6 12s13 7 18 0 18-7 18 0-13 7-18 0Z"/></svg></div><h2 class="prep-title" id="prepTitle">Checking your workspace…</h2><p class="prep-text" id="prepText">One moment.</p><div class="prep-bar" id="prepBar" role="progressbar" aria-label="Workspace preparation"><i id="prepFill"></i></div><div id="slotAction"></div><div class="connection-status" id="connectionStatus"><span></span>Checking…</div><p class="portal-note">You&apos;ll be redirected to Deriv to sign in — your password is never shared with this app.</p></div></div>`;
 document.querySelector('#portalBack').onclick=settings;
+function setView(o){
+var t=document.querySelector('#prepTitle'),x=document.querySelector('#prepText'),bar=document.querySelector('#prepBar'),fill=document.querySelector('#prepFill'),pill=document.querySelector('#connectionStatus');
+if(!t||!x||!bar||!fill||!pill)return;
+t.textContent=o.title;x.textContent=o.text;
+bar.className='prep-bar'+(o.busy?' busy':'')+(o.done?' done':'');
+fill.style.width=(o.frac>0?Math.max(o.frac*100,8):0)+'%';
+if(o.busy){bar.removeAttribute('aria-valuenow');}else{bar.setAttribute('aria-valuenow',String(Math.round(o.frac*100)));bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');}
+pill.className='connection-status'+(o.pill==='ok'?' connected':(o.pill==='err'?' error':''));
+pill.innerHTML='<span></span>'+o.status;
+}
+function setAction(label,handler,ghost){
+var action=document.querySelector('#slotAction');if(!action)return;
+action.innerHTML='<button class="connect" id="connect" type="button"><span class="connect-badge"><svg viewBox="0 0 20 20"><path d="M12 3 5 5v6c0 4.2 2.9 8 7 9.5 4.1-1.5 7-5.3 7-9.5V5l-7-2Z"/><path d="m8.8 12 2.1 2.1 4.4-4.5"/></svg></span><span class="connect-label">'+label+'</span><span class="connect-arrow"><svg viewBox="0 0 20 20"><path d="M4 10h11M10 5l5 5-5 5"/></svg></span></button>';
+document.querySelector('#connect').onclick=handler;
+if(ghost){var sk=document.createElement('button');sk.id='skipNuclear';sk.type='button';sk.textContent='Open robot now';sk.className='prep-ghost';sk.onclick=function(){['auto_chain','auto_target'].forEach(function(k){sessionStorage.removeItem(k);});window.location.href='/Ariana.html';};action.appendChild(sk);}
+}
+function clearAction(){var a=document.querySelector('#slotAction');if(a)a.innerHTML='';}
 function paint(server,failed){
-var list=document.querySelector('#slotList'),action=document.querySelector('#slotAction'),pill=document.querySelector('#connectionStatus');
-if(!list||!action||!pill)return;
-var rows='',readyCount=0,active=0,activeServerOk=false,i;
+var rowsReady=0,active=0,activeServerOk=false,i;
 for(i=1;i<=SLOT_COUNT;i++){
 var serverOk=!!(server&&server.slots&&server.slots[i-1]&&server.slots[i-1].status==='connected');
 var ready=(serverOk||i>4)&&!!slotToken(i);
-var state,text;
-if(!active&&ready){state='done';text='Connected';readyCount++;}
-else if(!active){active=i;activeServerOk=serverOk;state='active';text=serverOk?'Session expired — reconnect':'Ready to connect';}
-else{state='locked';text='Waits for App '+(i-1);}
-rows+='<li class="slot-row '+state+'"><span class="slot-num" aria-hidden="true">'+(state==='done'?CHECK_SVG:(state==='locked'?LOCK_SVG:i))+'</span><span class="slot-info"><strong>App '+i+'</strong><small>'+text+'</small></span></li>';
+if(!active&&ready){rowsReady++;}
+else if(!active){active=i;activeServerOk=serverOk;}
 }
-list.innerHTML=rows;
-if(active){
-action.innerHTML='<button class="connect" id="connect"><span class="connect-badge"><svg viewBox="0 0 20 20"><path d="M12 3 5 5v6c0 4.2 2.9 8 7 9.5 4.1-1.5 7-5.3 7-9.5V5l-7-2Z"/><path d="m8.8 12 2.1 2.1 4.4-4.5"/></svg></span><span class="connect-label">'+(activeServerOk?'Reconnect':'Connect')+' App '+active+'</span><span class="connect-arrow"><svg viewBox="0 0 20 20"><path d="M4 10h11M10 5l5 5-5 5"/></svg></span></button>';
-if(readyCount>=4){var sk=document.createElement('button');sk.id='skipNuclear';sk.type='button';sk.textContent='Open robot with '+readyCount+' apps';sk.style.cssText='margin-top:10px;width:100%;padding:12px;border-radius:14px;border:1px solid #ffffff22;background:#ffffff0a;color:#b8cdec;font:600 .85rem Inter,sans-serif;cursor:pointer';sk.onclick=function(){['auto_chain','auto_target'].forEach(function(k){sessionStorage.removeItem(k);});window.location.href='/Ariana.html';};action.appendChild(sk);}
-document.querySelector('#connect').onclick=function(){var btn=document.querySelector('#connect');btn.disabled=true;sessionStorage.setItem('auto_chain','1');pill.className='connection-status';pill.innerHTML='<span></span>Connecting App '+active+'…';startDerivLogin('portal',active).catch(function(err){console.error('Deriv login failed to start:',err);btn.disabled=false;pill.innerHTML='<span style="border-color:#ff4d5e;box-shadow:0 0 12px #ff4d5e"></span>Could not start login — try again';});};
-}else{
-action.innerHTML='<div class="slot-done"><span class="slot-done-badge">'+CHECK_SVG+'</span><p>All '+SLOT_COUNT+' apps are connected. Go back and tap Access Robot to open the bot.</p></div>';
+var frac=rowsReady/SLOT_COUNT;
+var startLogin=function(){var btn=document.querySelector('#connect');if(btn)btn.disabled=true;sessionStorage.setItem('auto_chain','1');setView({title:'Preparing Your Trading Workspace',text:'Opening Deriv to authorize your account securely…',frac:frac,busy:true,status:'Connecting to Deriv…'});startDerivLogin('portal',active).catch(function(err){console.error('Deriv login failed to start:',err);if(btn)btn.disabled=false;setView({title:'Connection Interrupted',text:'We could not start the secure sign-in. Please try again.',frac:frac,pill:'err',status:'Could not start login'});setAction('Try again',startLogin);});};
+if(failed){
+setView({title:'Could Not Verify Your Setup',text:'We could not check your workspace status right now. Please try again.',frac:0,pill:'err',status:'Status check failed'});
+setAction('Try again',function(){renderPortal();});
+return;
 }
-/* Auto-reconnect: the account is already known to the database (server says this app was connected, or we are mid-chain), so go straight to Deriv for the next app. Each app is tried at most twice per browser session so a failure can never loop. */
 var chain=sessionStorage.getItem('auto_chain')==='1';
-if(readyCount===SLOT_COUNT){
+if(rowsReady===SLOT_COUNT){
 var tgt=sessionStorage.getItem('auto_target');
 ['auto_chain','auto_target'].forEach(function(k){sessionStorage.removeItem(k);});
 for(i=1;i<=SLOT_COUNT;i++)sessionStorage.removeItem('auto_try_'+i);
-if(tgt==='robot'&&!failed){pill.className='connection-status connected';pill.innerHTML='<span></span>All '+SLOT_COUNT+' apps connected — opening robot…';setTimeout(function(){window.location.href='/Ariana.html';},700);return;}
-}else if(active&&!failed&&server&&server.registered&&(activeServerOk||chain)){
+setView({title:'Your Workspace Is Ready',text:'Your Deriv account is connected and your InfinityPips trading workspace has been prepared.',frac:1,done:true,pill:'ok',status:'Workspace ready'});
+if(tgt==='robot'){clearAction();setTimeout(function(){window.location.href='/Ariana.html';},700);return;}
+setAction('Open Robot',function(){window.location.href='/Ariana.html';});
+return;
+}
+if(active&&server&&server.registered&&(activeServerOk||chain)){
 var tries=Number(sessionStorage.getItem('auto_try_'+active)||0);
 if(tries<2){
 sessionStorage.setItem('auto_try_'+active,String(tries+1));
 sessionStorage.setItem('auto_chain','1');
-var abtn=document.querySelector('#connect');if(abtn)abtn.disabled=true;
-pill.className='connection-status';pill.innerHTML='<span></span>Reconnecting App '+active+' automatically…';
-setTimeout(function(){startDerivLogin('portal',active).catch(function(err){console.error('Auto reconnect failed to start:',err);if(abtn)abtn.disabled=false;pill.innerHTML='<span style="border-color:#ff4d5e;box-shadow:0 0 12px #ff4d5e"></span>Could not start login — tap Connect';});},900);
+clearAction();
+setView({title:'Preparing Your Trading Workspace',text:rowsReady>0?'Your Deriv account has been successfully connected. We\u2019re now preparing your InfinityPips trading workspace. Please be patient \u2014 this may take a few minutes.':'Restoring your secure session. Please be patient \u2014 this may take a few minutes.',frac:frac,busy:true,status:'Initializing your workspace\u2026'});
+setTimeout(function(){startDerivLogin('portal',active).catch(function(err){console.error('Auto reconnect failed to start:',err);setView({title:'Connection Interrupted',text:'We could not resume the secure sign-in. Please try again.',frac:frac,pill:'err',status:'Could not start login'});setAction('Try again',startLogin);});},900);
 return;
-}else{sessionStorage.removeItem('auto_chain');sessionStorage.removeItem('auto_target');}
 }
-if(failed){pill.className='connection-status';pill.innerHTML='<span style="border-color:#ff4d5e;box-shadow:0 0 12px #ff4d5e"></span>Could not check status — try again';}
-else{pill.className='connection-status'+(readyCount===SLOT_COUNT?' connected':'');pill.innerHTML='<span></span>'+(readyCount===SLOT_COUNT?'All '+SLOT_COUNT+' apps connected':readyCount+' of '+SLOT_COUNT+' apps connected');}
+sessionStorage.removeItem('auto_chain');sessionStorage.removeItem('auto_target');
+setView({title:'Setup Needs Your Attention',text:'Your workspace could not finish preparing automatically. Tap below to try again.',frac:frac,pill:'err',status:'Setup paused'});
+setAction('Try again',function(){sessionStorage.removeItem('auto_try_'+active);startLogin();},rowsReady>=4);
+return;
+}
+if(rowsReady>0){
+setView({title:'Finishing Your Setup',text:'Your Deriv account is connected. Continue to finish preparing your trading workspace.',frac:frac,status:'Setup in progress'});
+setAction('Continue setup',startLogin,rowsReady>=4);
+}else{
+setView({title:'Connect Your Deriv Account',text:'Authorize securely with Deriv to prepare your InfinityPips trading workspace.',frac:0,status:'Ready to connect'});
+setAction('Connect Deriv account',startLogin);
+}
 }
 fetch('/.netlify/functions/connections-status',{credentials:'include',cache:'no-store'}).then(function(r){return r.json();}).then(function(data){if(data&&data.slots){paint(data,false);}else{paint(null,true);}}).catch(function(err){console.error('Connection status check failed:',err);paint(null,true);});
 }
