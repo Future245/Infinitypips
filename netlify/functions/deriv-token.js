@@ -191,8 +191,8 @@ exports.handler = async function (event) {
       [canonicalLoginid]
     );
 
-    // Slots 2-8 may only EXTEND an existing setup: same browser session and
-    // same Deriv account as slot 1 (any order, so they can run in parallel).
+    // Slots 2-4 may only EXTEND an existing setup: same browser session,
+    // same Deriv account as slot 1, and the previous slot already done.
     // They never create users or link a new Deriv identity.
     if (slot > 1) {
       if (!sessionAppUserId) {
@@ -204,8 +204,14 @@ exports.handler = async function (event) {
         console.warn('Slot', slot, 'login did not match the linked Deriv account');
         return jsonError(409, 'different_account', 'App ' + slot + ' must be connected with the same Deriv account as App 1.');
       }
-      // Apps 2-8 only need App 1 done (that is what creates the session checked
-      // above), so they can all be authorized at the same time, in any order.
+      const prevRes = await client.query(
+        "SELECT 1 FROM app_connections WHERE app_user_id = $1 AND app_slot = $2 AND status = 'connected'",
+        [sessionAppUserId, slot > 5 ? 4 : slot - 1]   // Nuclear apps 5-8 only need Apps 1-4 done, in any order
+      );
+      if (!prevRes.rows.length) {
+        await client.query('ROLLBACK');
+        return jsonError(409, 'previous_slot_required', 'Connect App ' + (slot - 1) + ' first, then continue in order.');
+      }
     }
 
     let appUserId;

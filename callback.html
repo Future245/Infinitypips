@@ -3,14 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Connecting to Deriv…</title>
+<title>Infinity Pips</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
-  :root{ box-sizing:border-box; }
+  :root{ box-sizing:border-box; color-scheme:dark; }
   *{ box-sizing:inherit; margin:0; padding:0; }
   body{
-    font-family:-apple-system, 'Inter', sans-serif;
-    background:#05030c;
-    color:#f3eefc;
+    font-family:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
+    background:radial-gradient(120% 70% at 50% 0%,#0b1a33 0%,#000 62%);
+    color:#f5f7fa;
     min-height:100vh;
     display:flex;
     align-items:center;
@@ -18,75 +21,90 @@
     padding:24px;
     text-align:center;
   }
-  .box{ max-width:420px; }
-  h1{ font-size:20px; margin-bottom:12px; font-weight:700; }
-  p{ color:#a996d6; font-size:14px; line-height:1.5; }
-  .spinner{
-    width:36px; height:36px;
-    border:3px solid #3a2a63;
-    border-top-color:#3ad4ff;
-    border-radius:50%;
-    margin:0 auto 20px;
-    animation:spin 0.8s linear infinite;
+  .box{ max-width:360px; display:flex; flex-direction:column; align-items:center; gap:16px; }
+  .orb{ position:relative; width:88px; height:88px; display:grid; place-items:center; margin-bottom:4px; }
+  .orb i{ position:absolute; inset:0; border-radius:50%; border:1.5px solid rgba(230,241,255,.35); box-shadow:0 0 26px rgba(77,166,255,.35), inset 0 0 20px rgba(77,166,255,.18); }
+  .orb i+i{ inset:12px; border-color:rgba(77,166,255,.45); }
+  .orb svg{ position:relative; width:46px; height:23px; fill:none; stroke:#e6f1ff; stroke-width:2.6; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 0 8px rgba(77,166,255,.9)); }
+  h1{ font-size:21px; line-height:1.25; font-weight:800; letter-spacing:-.01em; }
+  p{ color:#c3ccd9; font-size:14.5px; line-height:1.6; }
+  .bar{ position:relative; width:100%; height:7px; border-radius:99px; overflow:hidden; background:rgba(255,255,255,.07); border:1px solid rgba(168,209,255,.16); margin-top:4px; }
+  .bar::after{ content:""; position:absolute; top:0; bottom:0; left:-40%; width:38%; background:linear-gradient(90deg,transparent,rgba(77,166,255,.95),transparent); }
+  @media (prefers-reduced-motion:no-preference){
+    .orb i{ animation:pulse 2.8s ease-in-out infinite; } .orb i+i{ animation-delay:-1.4s; }
+    .bar::after{ animation:sweep 1.4s ease-in-out infinite; }
   }
-  @keyframes spin{ to{ transform:rotate(360deg); } }
-  h1.error{ color:#ff3b57; }
+  @keyframes pulse{ 0%,100%{ transform:scale(.94); opacity:.65; } 50%{ transform:scale(1.04); opacity:1; } }
+  @keyframes sweep{ to{ left:102%; } }
+  h1.error{ color:#ff8e9b; }
   a.btn{
     display:inline-block;
-    margin-top:18px;
-    padding:10px 22px;
-    background:#160f2e;
-    border:1px solid #3ad4ff;
-    color:#d8f6ff;
-    border-radius:10px;
+    margin-top:6px;
+    padding:12px 24px;
+    background:linear-gradient(180deg,#14448c,#0d2f61);
+    border:1px solid rgba(168,209,255,.45);
+    color:#fff;
+    border-radius:12px;
     text-decoration:none;
-    font-weight:600;
+    font-weight:700;
   }
+
+ .ipl-status{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;margin-top:6px;padding:0 18px 0 16px;border-radius:18px;border:1px solid rgba(168,209,255,.16);background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));text-align:left}
+ .ipl-dot{position:relative;flex:none;width:9px;height:9px;border-radius:50%;background:#e6f1ff;box-shadow:0 0 10px rgba(230,241,255,.8)}
+ .ipl-dot::after{content:"";position:absolute;inset:0;border-radius:inherit;background:#e6f1ff}
+ .ipl-msg{flex:1;min-width:0;font:500 12.5px/1.35 'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;letter-spacing:.02em;color:#eaf0f7;transition:opacity .25s ease,transform .25s ease}
+ .ipl-msg.out{opacity:0;transform:translateY(4px)}
+ .ipl-tag{flex:none;font:500 10px/1 'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;letter-spacing:.16em;color:#8e99a8}
+@media (prefers-reduced-motion:no-preference){ .ipl-dot::after{animation:iplPing 1.8s ease-out infinite}}
+@media (prefers-reduced-motion:reduce){ .ipl-msg{transition:none}}
+@media (max-width:340px){ .ipl-tag{display:none}}
+@keyframes iplPing{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.6);opacity:0}}
 </style>
 </head>
 <body>
 
 <div class="box" id="box">
-  <div class="spinner" id="spinner"></div>
-  <h1 id="title">Connecting your Deriv account…</h1>
-  <p id="message">Please wait while we finish signing you in.</p>
+  <div class="orb" id="orb" aria-hidden="true"><i></i><i></i><svg viewBox="0 0 48 24"><path d="M24 12C19 5 6 5 6 12s13 7 18 0 18-7 18 0-13 7-18 0Z"/></svg></div>
+  <h1 id="title">Preparing Your Trading Workspace</h1>
+  <p id="message">Please wait a moment while we complete your secure sign-in.</p>
+  <div class="bar" id="spinner" role="progressbar" aria-label="Preparing workspace"></div>
+  <div class="ipl-status"><span class="ipl-dot" aria-hidden="true"></span><span class="ipl-msg" id="iplMsg" aria-live="off">Verifying access...</span><span class="ipl-tag" aria-hidden="true">SECURE</span></div>
 </div>
 
 <script>
 (function(){
+  var MSGS=['Verifying access...','Initializing your workspace...','Checking...'],idx=0,tm=null,sw=null;
+  function iplStop(){if(tm){clearInterval(tm);tm=null;}if(sw){clearTimeout(sw);sw=null;}}
+  function iplStart(){var el=document.getElementById('iplMsg');if(!el)return;iplStop();idx=0;el.className='ipl-msg';el.textContent=MSGS[0];tm=setInterval(function(){idx=(idx+1)%MSGS.length;el.classList.add('out');sw=setTimeout(function(){el.textContent=MSGS[idx];el.classList.remove('out');},250);},2200);}
+  iplStart();
   var box = document.getElementById('box');
   var spinner = document.getElementById('spinner');
   var title = document.getElementById('title');
   var message = document.getElementById('message');
 
-  // When this page is loaded inside a hidden frame by the portal (all apps
-  // connecting at once), report back to the portal instead of navigating.
-  var framed = false; try { framed = window.parent !== window; } catch (e) {}
-  var framedSlot = null;
-  function tellParent(ok, msg){ try { window.parent.postMessage({ type: 'deriv_slot', slot: framedSlot, ok: ok, message: msg || '' }, window.location.origin); } catch (e) {} }
-
   function showError(msg){
-    if (framed){ tellParent(false, msg); return; }
+    iplStop();
+    var st = document.querySelector('.ipl-status'); if (st) st.style.display = 'none';
     spinner.style.display = 'none';
-    title.textContent = 'Login failed';
+    document.getElementById('orb').style.display = 'none';
+    title.textContent = 'Connection interrupted';
     title.className = 'error';
     message.textContent = msg;
     var link = document.createElement('a');
     link.className = 'btn';
     link.href = '/';
-    link.textContent = 'Back to app';
+    link.textContent = 'Back to portal';
     box.appendChild(link);
   }
 
   function showSuccess(slot){
-    if (framed){ tellParent(true); return; }
-    spinner.style.display = 'none';
-    title.textContent = slot > 1 ? 'App ' + slot + ' connected!' : 'Connected!';
-    message.textContent = 'Redirecting you back to the app…';
+    // No success screen: hand straight back to the portal. replace() keeps this
+    // callback page out of the browser history so Back never returns to it.
     var target = sessionStorage.getItem('deriv_post_auth_target') || 'portal';
     sessionStorage.removeItem('deriv_post_auth_target');
     var destination = target === 'robot' ? '/Ariana.html' : '/';
-    setTimeout(function(){ window.location.href = destination + '?deriv_connected=1&slot=' + slot; }, 1200);
+    iplStop();
+    window.location.replace(destination + '?deriv_connected=1&slot=' + slot);
   }
 
   var params = new URLSearchParams(window.location.search);
@@ -114,7 +132,6 @@
     return;
   }
   var slot = Number(slotMatch[1]);
-  framedSlot = slot;
 
   var storedState = sessionStorage.getItem('deriv_oauth_state_' + slot);
   var codeVerifier = sessionStorage.getItem('deriv_code_verifier_' + slot);
@@ -125,7 +142,7 @@
   }
 
   if (!codeVerifier){
-    showError('Your login session expired. Please try logging in again.');
+    showError('Your sign-in session expired. Please return to the portal and try again.');
     return;
   }
 
