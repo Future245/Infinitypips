@@ -940,6 +940,15 @@
 
 
 
+
+    .custom-row{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;background:linear-gradient(180deg,#0a1330,#08102a);border-bottom:1px solid rgba(0,240,255,.18)}
+    .custom-sign{font:800 15px var(--font-head);color:var(--cyan)}
+    .custom-row input{flex:1;min-width:0;height:42px;padding:0 12px;border-radius:12px;border:1px solid rgba(0,240,255,.3);background:rgba(0,0,0,.35);color:#fff;font:700 15px var(--font-body);outline:none}
+    .custom-row input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(0,240,255,.15)}
+    .custom-row input::placeholder{color:rgba(255,255,255,.4);font-weight:600}
+    .custom-row button{height:42px;padding:0 18px;border:0;border-radius:12px;cursor:pointer;font:800 11px var(--font-head);letter-spacing:.14em;text-transform:uppercase;color:#03161c;background:linear-gradient(135deg,var(--cyan),var(--green))}
+    .custom-err{flex-basis:100%;min-height:0;font:700 11px var(--font-body);color:#ff6f91}
+    .custom-err:empty{display:none}
     .stake-info{margin:8px 4px 0;font:700 11px var(--font-body);letter-spacing:.06em;color:#7fe9f5;text-shadow:0 0 8px rgba(0,240,255,.35);line-height:1.35}
     .stake-info.warn{color:#ff6f91;text-shadow:0 0 8px rgba(255,0,85,.35)}
     /* ── Run stopwatch + target congratulations ── */
@@ -2278,6 +2287,29 @@
       document.getElementById('modal-title').textContent = data.title;
       const container = document.getElementById('modal-options');
       container.innerHTML = '';
+      if (type === 'profit') {
+        // Type any net profit yourself (e.g. 7.50), or pick one from the list below.
+        const row = document.createElement('div');
+        row.className = 'custom-row';
+        row.innerHTML = '<span class="custom-sign">$</span><input id="custom-profit" type="number" inputmode="decimal" min="0.01" max="10000" step="any" placeholder="Type net profit" autocomplete="off" /><button type="button" id="custom-profit-btn">Use</button><div class="custom-err" id="custom-profit-err"></div>';
+        container.appendChild(row);
+        const inp = row.querySelector('#custom-profit'), btn = row.querySelector('#custom-profit-btn'), err = row.querySelector('#custom-profit-err');
+        const apply = () => {
+          const n = Math.round(parseFloat(inp.value) * 100) / 100;
+          if (!isFinite(n) || n < 0.01 || n > 10000) { err.textContent = 'Enter an amount from $0.01 to $10,000.'; return; }
+          selectOption('$' + n + ' net profit');
+        };
+        btn.onclick = apply;
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+        inp.addEventListener('input', () => { err.textContent = ''; });
+        if (data.items.indexOf(data.selected) === -1) {   // a typed amount is the current choice
+          const cur = document.createElement('div');
+          cur.className = 'pick-option selected';
+          cur.innerHTML = `<span class="pick-label">${data.selected}</span><div class="pick-radio"><div class="pick-dot"></div></div>`;
+          cur.onclick = () => selectOption(data.selected);
+          container.appendChild(cur);
+        }
+      }
       data.items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'pick-option' + (item === data.selected ? ' selected' : '');
