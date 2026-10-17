@@ -967,12 +967,7 @@ input:disabled{color:rgb(var(--disabled));border-color:rgb(var(--line)/.12);back
 }
 .bg-lux .glow-cursor.on{opacity:1}
 
-/* -- depth: layers drift against the pointer / phone tilt (individual `translate` never fights `transform` animations) -- */
-.bg-lux{--ex:0;--ey:0}
-.bg-lux .au{translate:calc(var(--ex)*-26px) calc(var(--ey)*-18px)}
-.bg-lux .grid{translate:calc(var(--ex)*-10px) calc(var(--ey)*-8px)}
-.bg-lux .chart{translate:calc(var(--ex)*-20px) calc(var(--ey)*-12px)}
-.bg-lux canvas{translate:calc(var(--ex)*-6px) calc(var(--ey)*-5px)}
+/* -- depth: only the small robot layers drift with the pointer (the big backdrop layers stay perfectly still = no flicker) -- */
 .face-stage .aura{translate:calc(var(--ex)*16px) calc(var(--ey)*12px)}
 .face-stage .orbit.o1{translate:calc(var(--ex)*-7px) calc(var(--ey)*-6px)}
 .face-stage .orbit.o3{translate:calc(var(--ex)*-12px) calc(var(--ey)*-9px)}
@@ -1026,24 +1021,22 @@ input:disabled{color:rgb(var(--disabled));border-color:rgb(var(--line)/.12);back
 .heading.is-license .num::after{border-color:rgb(var(--accent)/.75)}
 
 /* -- cards: 3D tilt, pointer spotlight, press ripple -- */
-.card{
-  --ty:0px;--s:1;
-  transform:perspective(760px) translate3d(0,var(--ty),0) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(var(--s));
-  will-change:transform;
-}
-.card:active{--s:.975;transform:perspective(760px) translate3d(0,var(--ty),0) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(var(--s))}
-@media (hover:hover){
+.card{will-change:transform}
+@media (hover:hover) and (pointer:fine){
+  .card{
+    --ty:0px;--s:1;
+    transform:perspective(760px) translate3d(0,var(--ty),0) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(var(--s));
+  }
+  .card:active{--s:.975;transform:perspective(760px) translate3d(0,var(--ty),0) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(var(--s))}
   .card:hover{--ty:-3px;transform:perspective(760px) translate3d(0,var(--ty),0) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(var(--s))}
 }
 .sheen::after{
   content:"";position:absolute;inset:0;opacity:0;transition:opacity .35s ease;
   background:radial-gradient(200px circle at var(--mx,50%) var(--my,0%),rgb(var(--hi)/.24),rgb(var(--c1)/.16) 36%,transparent 70%);
 }
-.card.touching .sheen::after{opacity:1}
-@media (hover:hover){.card:hover .sheen::after{opacity:1}}
+@media (hover:hover) and (pointer:fine){.card:hover .sheen::after,.card.touching .sheen::after{opacity:1}}
 .card .icon{transition:transform .55s var(--ease-spring)}
-.card.touching .icon{transform:translateZ(0) scale(1.06) rotate(-3deg)}
-@media (hover:hover){.card:hover .icon{transform:scale(1.06) rotate(-3deg)}}
+@media (hover:hover) and (pointer:fine){.card:hover .icon{transform:scale(1.06) rotate(-3deg)}}
 .rip{
   position:absolute;left:0;top:0;width:var(--d,160px);height:var(--d,160px);margin:calc(var(--d,160px)/-2) 0 0 calc(var(--d,160px)/-2);
   border-radius:50%;pointer-events:none;opacity:.9;
@@ -1094,8 +1087,15 @@ input:disabled{color:rgb(var(--disabled));border-color:rgb(var(--line)/.12);back
 @keyframes statusShine{0%{background-position:130% 0}100%{background-position:-30% 0}}
 @keyframes trustSweep{0%,58%{transform:translateX(-130%) skewX(-20deg)}100%{transform:translateX(430%) skewX(-20deg)}}
 @keyframes bobIcon{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
-@keyframes heroOut{to{transform:translate3d(0,44px,0) scale(.92);opacity:.12}}
+@keyframes heroOut{to{transform:translate3d(0,36px,0) scale(.94)}}
 
+
+/* touch screens: skip the effects that repaint every frame (text-clip sheen, pill shimmer) so nothing can flicker while you scroll or tap */
+@media (pointer:coarse){
+  .status:not(.connected)::before{display:none}
+  .face-title h1::after{animation:metal 4.5s ease-in-out infinite alternate}
+  .rip{display:none}
+}
 
 /* ---------- 13. REDUCED MOTION ---------- */
 @media (prefers-reduced-motion:reduce){
@@ -1414,9 +1414,8 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
 (() => {
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 
-  /* ---- Eyes follow the pointer (or the tilt of your phone); the whole backdrop drifts a few px for depth ---- */
+  /* ---- Eyes follow the pointer ---- */
   const stage = document.querySelector('.face-stage');
-  const bgEl = document.querySelector('.bg-lux');
   let lastPtr = 0;
   if (stage && !reduce.matches) {
     let tx = 0, ty = 0, cx = 0, cy = 0, raf = 0;
@@ -1425,7 +1424,6 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
       cx += (tx - cx) * .14; cy += (ty - cy) * .14;
       const sx = cx.toFixed(3), sy = cy.toFixed(3);
       stage.style.setProperty('--ex', sx); stage.style.setProperty('--ey', sy);
-      if (bgEl) { bgEl.style.setProperty('--ex', sx); bgEl.style.setProperty('--ey', sy); }
       raf = (Math.abs(tx - cx) + Math.abs(ty - cy) > .002) ? requestAnimationFrame(loop) : 0;
     };
     const kick = () => { if (!raf) raf = requestAnimationFrame(loop); };
@@ -1437,13 +1435,6 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
     };
     addEventListener('pointermove', e => { lastPtr = performance.now(); aim(e.clientX, e.clientY); }, { passive: true });
     document.addEventListener('mouseleave', () => { tx = ty = 0; kick(); });
-    /* phones: tilt the device and the robot (and the stars behind it) follow */
-    if (matchMedia('(pointer: coarse)').matches && 'DeviceOrientationEvent' in window && typeof DeviceOrientationEvent.requestPermission !== 'function') {
-      addEventListener('deviceorientation', e => {
-        if (e.gamma == null || e.beta == null || performance.now() - lastPtr < 1600) return;
-        tx = clamp(e.gamma / 22); ty = clamp((e.beta - 55) / 26); kick();
-      }, { passive: true });
-    }
   }
 
   /* ---- Soft light that follows a mouse ---- */
@@ -1544,7 +1535,7 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
     size(); draw(0);
     if (!reduce.matches) start();
     document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
-    let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { size(); draw(0); }, 150); });
+    let rt, lw = innerWidth; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (innerWidth === lw) return; lw = innerWidth; size(); draw(0); }, 200); });
   }
 })();
 </script>
@@ -1701,22 +1692,22 @@ initialRoute();
   };
 
   document.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse') return;
     const el = hit(e); if (!el) return;
     pend = { el, x: e.clientX, y: e.clientY }; if (!raf) raf = requestAnimationFrame(apply);
   }, { passive: true });
 
   document.addEventListener('pointerdown', e => {
     const el = hit(e); if (!el || e.button > 0) return;
+    if (e.pointerType === 'touch') { if (navigator.vibrate) { try { navigator.vibrate(8); } catch (_) {} } return; }
     pend = { el, x: e.clientX, y: e.clientY }; apply();
     el.classList.add('touching');
     if (!reduce.matches) ripple(el, e);
-    if (e.pointerType === 'touch' && navigator.vibrate) { try { navigator.vibrate(8); } catch (_) {} }
   }, { passive: true });
 
   const up = e => {
     const el = hit(e); if (!el) return;
     if (e.pointerType === 'mouse') el.classList.remove('touching');
-    else setTimeout(() => reset(el), 240);
   };
   document.addEventListener('pointerup', up, { passive: true });
   document.addEventListener('pointercancel', up, { passive: true });
