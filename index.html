@@ -582,9 +582,11 @@ button{font:inherit;color:inherit}
 .face-title h1::before{z-index:-1;color:rgb(var(--brand-2)/.6);filter:blur(18px);opacity:.55}
 .face-title h1::after{
   color:transparent;
-  background:linear-gradient(180deg,rgb(var(--hi)) 0%,rgb(var(--brand-2)) 34%,rgb(var(--brand)) 70%,rgb(var(--accent)) 100%);
+  background:
+    linear-gradient(105deg,transparent 38%,rgb(var(--hi)) 50%,transparent 62%) 160% 0/260% 100% no-repeat,
+    linear-gradient(180deg,rgb(var(--hi)) 0%,rgb(var(--brand-2)) 34%,rgb(var(--brand)) 70%,rgb(var(--accent)) 100%);
   -webkit-background-clip:text;background-clip:text;
-  animation:metal 4.5s ease-in-out infinite alternate;
+  animation:metal 4.5s ease-in-out infinite alternate,titleSheen 6.5s var(--ease-out) 2.2s infinite;
 }
 .subline{margin:12px 0 0;display:flex;align-items:center;justify-content:center;gap:12px}
 .subline i{width:32px;height:1px;background:linear-gradient(90deg,transparent,rgb(var(--brand-2)/.7))}
@@ -947,12 +949,162 @@ input:disabled{color:rgb(var(--disabled));border-color:rgb(var(--line)/.12);back
   .foot-link .shine{font-size:.75rem}
 }
 
+/* ---------- 12b. ULTRA LAYER (depth, light, life) ----------
+   Everything below is decorative + progressive: it only uses tokens from section 1,
+   animates transform / opacity, and is switched off by prefers-reduced-motion. */
+
+/* -- market line running through the backdrop -- */
+.bg-lux .chart{
+  position:absolute;left:0;bottom:4%;width:max(200vmax,1700px);height:46vh;opacity:.6;
+  -webkit-mask-image:linear-gradient(180deg,transparent 0%,#000 32%,#000 68%,transparent 100%);
+  mask-image:linear-gradient(180deg,transparent 0%,#000 32%,#000 68%,transparent 100%);
+  animation:chartRun 70s linear infinite;
+}
+.bg-lux .glow-cursor{
+  position:absolute;left:0;top:0;width:560px;height:560px;margin:-280px 0 0 -280px;border-radius:50%;
+  background:radial-gradient(circle,rgb(var(--brand-2)/.17) 0%,rgb(var(--brand)/.09) 38%,transparent 68%);
+  opacity:0;transform:translate3d(-999px,-999px,0);transition:opacity .5s ease;
+}
+.bg-lux .glow-cursor.on{opacity:1}
+
+/* -- depth: layers drift against the pointer / phone tilt (individual `translate` never fights `transform` animations) -- */
+.bg-lux{--ex:0;--ey:0}
+.bg-lux .au{translate:calc(var(--ex)*-26px) calc(var(--ey)*-18px)}
+.bg-lux .grid{translate:calc(var(--ex)*-10px) calc(var(--ey)*-8px)}
+.bg-lux .chart{translate:calc(var(--ex)*-20px) calc(var(--ey)*-12px)}
+.bg-lux canvas{translate:calc(var(--ex)*-6px) calc(var(--ey)*-5px)}
+.face-stage .aura{translate:calc(var(--ex)*16px) calc(var(--ey)*12px)}
+.face-stage .orbit.o1{translate:calc(var(--ex)*-7px) calc(var(--ey)*-6px)}
+.face-stage .orbit.o3{translate:calc(var(--ex)*-12px) calc(var(--ey)*-9px)}
+
+/* -- robot: third orbit, living eyes, signal, light trace, glint -- */
+.orbit.o3{animation:spin 110s linear infinite}
+.eyes-boot{transform-box:fill-box;transform-origin:center;animation:boot 1.1s var(--ease-out) .55s backwards}
+.iris{transform-box:fill-box;transform-origin:center;animation:spin 16s linear infinite}
+.iris.rev{animation-duration:11s;animation-direction:reverse}
+.brows{transform-box:fill-box;transform-origin:center;animation:brow 8s ease-in-out infinite 3s}
+.trace{animation:trace 3.8s var(--ease-out) infinite 1.4s}
+.sig{transform-box:fill-box;transform-origin:center;animation:sig 2.8s ease-out infinite}
+.sig.s2{animation-delay:-1.4s}
+.scan::after{
+  content:"";position:absolute;top:-10%;bottom:-10%;left:0;width:34%;
+  transform:translateX(-170%) skewX(-18deg);
+  background:linear-gradient(100deg,transparent,rgb(var(--hi)/.2),transparent);
+  animation:glint 10s var(--ease-out) infinite 3s;
+}
+
+/* holographic floor under the robot */
+.floor{position:absolute;left:50%;top:calc(var(--face) + 4px);width:calc(var(--face)*1.18);height:calc(var(--face)*.17);translate:-50% -50%;pointer-events:none;z-index:0}
+.floor i{
+  position:absolute;inset:0;border-radius:50%;opacity:0;
+  border:1px solid rgb(var(--brand-2)/.6);
+  box-shadow:0 0 16px rgb(var(--brand-2)/.35),inset 0 0 14px rgb(var(--brand-2)/.2);
+  animation:floorRing 5.4s var(--ease-out) infinite;
+}
+.floor i:nth-child(2){animation-delay:-1.8s}
+.floor i:nth-child(3){animation-delay:-3.6s}
+.face-title{z-index:1}
+
+/* title: cinematic tracking-in + a bar of light that sweeps across the letters */
+.face-title h1{animation:titleIn 1.5s var(--ease-out) .4s backwards}
+
+/* -- panel: HUD corner brackets (drawn as backgrounds so they survive the script re-rendering the panel) + breathing badges -- */
+.panel::before{
+  background:
+    linear-gradient(rgb(var(--brand-2)/.85),rgb(var(--brand-2)/.85)) 8px 8px/12px 1.5px no-repeat,
+    linear-gradient(rgb(var(--brand-2)/.85),rgb(var(--brand-2)/.85)) 8px 8px/1.5px 12px no-repeat,
+    linear-gradient(rgb(var(--brand-2)/.85),rgb(var(--brand-2)/.85)) right 8px top 8px/12px 1.5px no-repeat,
+    linear-gradient(rgb(var(--brand-2)/.85),rgb(var(--brand-2)/.85)) right 8px top 8px/1.5px 12px no-repeat,
+    linear-gradient(rgb(var(--brand-2)/.85),rgb(var(--brand-2)/.85)) left 8px bottom 8px/12px 1.5px no-repeat,
+    linear-gradient(rgb(var(--brand-2)/.85),rgb(var(--brand-2)/.85)) left 8px bottom 8px/1.5px 12px no-repeat,
+    linear-gradient(rgb(var(--brand-2)/.85),rgb(var(--brand-2)/.85)) right 8px bottom 8px/12px 1.5px no-repeat,
+    linear-gradient(rgb(var(--brand-2)/.85),rgb(var(--brand-2)/.85)) right 8px bottom 8px/1.5px 12px no-repeat,
+    linear-gradient(180deg,rgb(var(--hi)/.1),transparent 24%);
+}
+.num{position:relative}
+.num::after{content:"";position:absolute;inset:-1px;border-radius:inherit;border:1px solid rgb(var(--brand-2)/.7);pointer-events:none;animation:numPing 3.8s ease-out infinite}
+.heading.is-license .num::after{border-color:rgb(var(--accent)/.75)}
+
+/* -- cards: 3D tilt, pointer spotlight, press ripple -- */
+.card{
+  --ty:0px;--s:1;
+  transform:perspective(760px) translate3d(0,var(--ty),0) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(var(--s));
+  will-change:transform;
+}
+.card:active{--s:.975;transform:perspective(760px) translate3d(0,var(--ty),0) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(var(--s))}
+@media (hover:hover){
+  .card:hover{--ty:-3px;transform:perspective(760px) translate3d(0,var(--ty),0) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(var(--s))}
+}
+.sheen::after{
+  content:"";position:absolute;inset:0;opacity:0;transition:opacity .35s ease;
+  background:radial-gradient(200px circle at var(--mx,50%) var(--my,0%),rgb(var(--hi)/.24),rgb(var(--c1)/.16) 36%,transparent 70%);
+}
+.card.touching .sheen::after{opacity:1}
+@media (hover:hover){.card:hover .sheen::after{opacity:1}}
+.card .icon{transition:transform .55s var(--ease-spring)}
+.card.touching .icon{transform:translateZ(0) scale(1.06) rotate(-3deg)}
+@media (hover:hover){.card:hover .icon{transform:scale(1.06) rotate(-3deg)}}
+.rip{
+  position:absolute;left:0;top:0;width:var(--d,160px);height:var(--d,160px);margin:calc(var(--d,160px)/-2) 0 0 calc(var(--d,160px)/-2);
+  border-radius:50%;pointer-events:none;opacity:.9;
+  background:radial-gradient(circle,rgb(var(--hi)/.5),rgb(var(--brand-2)/.28) 38%,transparent 68%);
+  transform:translate3d(var(--x,0),var(--y,0),0) scale(0);
+  animation:rip .75s var(--ease-out) forwards;
+}
+
+/* -- status pills: slow light sweep while waiting -- */
+.status{position:relative}
+.status:not(.connected)::before{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(100deg,transparent 35%,rgb(var(--hi)/.13) 50%,transparent 65%) 130% 0/250% 100% no-repeat;
+  animation:statusShine 5.5s linear infinite;
+}
+
+/* -- trust row: staggered light + floating icons -- */
+.trust li{position:relative;overflow:hidden}
+.trust li::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:40%;pointer-events:none;
+  transform:translateX(-130%) skewX(-20deg);
+  background:linear-gradient(100deg,transparent,rgb(var(--hi)/.14),transparent);
+  animation:trustSweep 7s var(--ease-out) infinite;
+}
+.trust li:nth-child(2)::before{animation-delay:.7s}
+.trust li:nth-child(3)::before{animation-delay:1.4s}
+.trust svg{filter:drop-shadow(0 0 6px rgb(var(--brand-2)/.75));animation:bobIcon 3.6s ease-in-out infinite}
+.trust li:nth-child(2) svg{animation-delay:-1.2s}
+.trust li:nth-child(3) svg{animation-delay:-2.4s}
+
+/* -- the hero eases back as you scroll (scroll-driven animation, where supported) -- */
+@supports (animation-timeline:scroll()){
+  .hero{animation:heroOut linear both;animation-timeline:scroll(root);animation-range:0 75vh}
+}
+
+@keyframes chartRun{to{transform:translate3d(-50%,0,0)}}
+@keyframes boot{0%{opacity:0;transform:scaleY(.04)}55%{opacity:1;transform:scaleY(1.12)}100%{opacity:1;transform:scaleY(1)}}
+@keyframes brow{0%,86%,100%{transform:translateY(0)}91%{transform:translateY(-3px)}}
+@keyframes trace{0%{stroke-dashoffset:12;opacity:0}12%{opacity:1}62%{stroke-dashoffset:-88;opacity:1}72%,100%{stroke-dashoffset:-88;opacity:0}}
+@keyframes sig{0%{transform:scale(1);opacity:.8}100%{transform:scale(4.6);opacity:0}}
+@keyframes glint{0%,64%{transform:translateX(-170%) skewX(-18deg)}100%{transform:translateX(430%) skewX(-18deg)}}
+@keyframes floorRing{0%{transform:scale(.18);opacity:.95}100%{transform:scale(1);opacity:0}}
+@keyframes titleIn{from{opacity:0;letter-spacing:.14em;filter:blur(10px)}}
+@keyframes titleSheen{0%,35%{background-position:160% 0,0 0}100%{background-position:-60% 0,0 0}}
+@keyframes hudPulse{0%,100%{opacity:.45}50%{opacity:1}}
+@keyframes numPing{0%{transform:scale(1);opacity:.7}70%,100%{transform:scale(1.5);opacity:0}}
+@keyframes rip{to{transform:translate3d(var(--x,0),var(--y,0),0) scale(2.6);opacity:0}}
+@keyframes statusShine{0%{background-position:130% 0}100%{background-position:-30% 0}}
+@keyframes trustSweep{0%,58%{transform:translateX(-130%) skewX(-20deg)}100%{transform:translateX(430%) skewX(-20deg)}}
+@keyframes bobIcon{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
+@keyframes heroOut{to{transform:translate3d(0,44px,0) scale(.92);opacity:.12}}
+
+
 /* ---------- 13. REDUCED MOTION ---------- */
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
   .track{transform:none}
   .robot-svg{transform:none}
   .ring::before{transform:none}
+  .rip,.glow-cursor{display:none}
+  .card{transform:none!important}
 }
 
 /* ===== Robot preparation screen (replaces the per-app checklist) ===== */
@@ -1047,6 +1199,16 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
 <div class="bg-lux" aria-hidden="true">
   <i class="au a1"></i><i class="au a2"></i><i class="au a3"></i><i class="au a4"></i>
   <div class="grid"></div><div class="beam"></div>
+  <svg class="chart" viewBox="0 0 2400 300" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="c-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:rgb(var(--brand-2)/.26)"/><stop offset="1" style="stop-color:rgb(var(--brand-2)/0)"/></linearGradient>
+    </defs>
+    <g style="stroke:rgb(var(--sky)/.09)" stroke-width="1" stroke-dasharray="3 9" vector-effect="non-scaling-stroke"><path d="M0 80H2400M0 150H2400M0 220H2400" vector-effect="non-scaling-stroke"/></g>
+    <path d="M0.0 152.9 L52.2 125.4 L104.3 137.2 L156.5 106.0 L208.7 111.9 L260.9 104.8 L313.0 76.4 L365.2 83.7 L417.4 60.0 L469.6 64.0 L521.7 60.0 L573.9 60.0 L626.1 63.4 L678.3 95.3 L730.4 72.8 L782.6 60.1 L834.8 78.1 L887.0 116.9 L939.1 124.5 L991.3 118.1 L1043.5 154.2 L1095.7 119.1 L1147.8 146.6 L1200.0 152.9 L1252.2 125.4 L1304.3 137.2 L1356.5 106.0 L1408.7 111.9 L1460.9 104.8 L1513.0 76.4 L1565.2 83.7 L1617.4 60.0 L1669.6 64.0 L1721.7 60.0 L1773.9 60.0 L1826.1 63.4 L1878.3 95.3 L1930.4 72.8 L1982.6 60.1 L2034.8 78.1 L2087.0 116.9 L2139.1 124.5 L2191.3 118.1 L2243.5 154.2 L2295.7 119.1 L2347.8 146.6 L2400.0 152.9 L2400 300 L0 300 Z" fill="url(#c-area)"/>
+    <path d="M0.0 152.9 L52.2 125.4 L104.3 137.2 L156.5 106.0 L208.7 111.9 L260.9 104.8 L313.0 76.4 L365.2 83.7 L417.4 60.0 L469.6 64.0 L521.7 60.0 L573.9 60.0 L626.1 63.4 L678.3 95.3 L730.4 72.8 L782.6 60.1 L834.8 78.1 L887.0 116.9 L939.1 124.5 L991.3 118.1 L1043.5 154.2 L1095.7 119.1 L1147.8 146.6 L1200.0 152.9 L1252.2 125.4 L1304.3 137.2 L1356.5 106.0 L1408.7 111.9 L1460.9 104.8 L1513.0 76.4 L1565.2 83.7 L1617.4 60.0 L1669.6 64.0 L1721.7 60.0 L1773.9 60.0 L1826.1 63.4 L1878.3 95.3 L1930.4 72.8 L1982.6 60.1 L2034.8 78.1 L2087.0 116.9 L2139.1 124.5 L2191.3 118.1 L2243.5 154.2 L2295.7 119.1 L2347.8 146.6 L2400.0 152.9" fill="none" stroke-width="7" stroke-linejoin="round" vector-effect="non-scaling-stroke" style="stroke:rgb(var(--brand-2)/.12)"/>
+    <path d="M0.0 152.9 L52.2 125.4 L104.3 137.2 L156.5 106.0 L208.7 111.9 L260.9 104.8 L313.0 76.4 L365.2 83.7 L417.4 60.0 L469.6 64.0 L521.7 60.0 L573.9 60.0 L626.1 63.4 L678.3 95.3 L730.4 72.8 L782.6 60.1 L834.8 78.1 L887.0 116.9 L939.1 124.5 L991.3 118.1 L1043.5 154.2 L1095.7 119.1 L1147.8 146.6 L1200.0 152.9 L1252.2 125.4 L1304.3 137.2 L1356.5 106.0 L1408.7 111.9 L1460.9 104.8 L1513.0 76.4 L1565.2 83.7 L1617.4 60.0 L1669.6 64.0 L1721.7 60.0 L1773.9 60.0 L1826.1 63.4 L1878.3 95.3 L1930.4 72.8 L1982.6 60.1 L2034.8 78.1 L2087.0 116.9 L2139.1 124.5 L2191.3 118.1 L2243.5 154.2 L2295.7 119.1 L2347.8 146.6 L2400.0 152.9" fill="none" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke" style="stroke:rgb(var(--brand-2)/.75)"/>
+  </svg>
+  <i class="glow-cursor"></i>
   <canvas id="fx"></canvas>
   <div class="vig"></div><div class="grain"></div>
 </div>
@@ -1085,6 +1247,13 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
           <circle cx="256" cy="135" r="2" style="fill:rgb(var(--ice)/.8)"/>
         </svg>
 
+        <svg class="orbit o3" viewBox="0 0 270 270" aria-hidden="true">
+          <circle cx="135" cy="135" r="134" fill="none" stroke-width="3" stroke-dasharray="1 8.4" style="stroke:rgb(var(--sky)/.16)"/>
+          <circle cx="135" cy="1" r="2.2" filter="url(#k-glow)" style="fill:rgb(var(--ice))"/>
+          <circle cx="269" cy="135" r="1.6" style="fill:rgb(var(--brand-2)/.9)"/>
+          <circle cx="40" cy="230" r="1.8" style="fill:rgb(var(--accent)/.9)"/>
+        </svg>
+
         <!-- the face -->
         <svg class="robot-svg" viewBox="0 0 270 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Infinity Pips robot face">
           <defs>
@@ -1099,6 +1268,19 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
               <stop offset=".5" style="stop-color:rgb(var(--brand))"/>
               <stop offset="1" style="stop-color:rgb(var(--sky))"/>
             </linearGradient>
+            <radialGradient id="k-vig" cx="50%" cy="46%" r="54%">
+              <stop offset=".58" style="stop-color:rgb(var(--ink));stop-opacity:0"/>
+              <stop offset="1" style="stop-color:rgb(var(--ink));stop-opacity:.62"/>
+            </radialGradient>
+            <radialGradient id="k-iris" cx="50%" cy="50%" r="50%">
+              <stop offset="0" style="stop-color:rgb(var(--brand-2));stop-opacity:.0"/>
+              <stop offset=".55" style="stop-color:rgb(var(--brand-2));stop-opacity:.22"/>
+              <stop offset="1" style="stop-color:rgb(var(--brand));stop-opacity:.5"/>
+            </radialGradient>
+            <radialGradient id="k-spec" cx="50%" cy="50%" r="50%">
+              <stop offset="0" style="stop-color:rgb(var(--hi));stop-opacity:.55"/>
+              <stop offset="1" style="stop-color:rgb(var(--hi));stop-opacity:0"/>
+            </radialGradient>
             <linearGradient id="k-gloss" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" style="stop-color:rgb(var(--hi));stop-opacity:.3"/>
               <stop offset="1" style="stop-color:rgb(var(--hi));stop-opacity:0"/>
@@ -1108,22 +1290,30 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
           <!-- body -->
           <circle cx="135" cy="135" r="112" fill="url(#k-body)"/>
           <circle cx="135" cy="135" r="112" fill="none" stroke="url(#k-rim)" stroke-width="2" opacity=".85"/>
+          <circle cx="135" cy="135" r="112" fill="url(#k-vig)"/>
           <circle cx="135" cy="135" r="98" fill="none" stroke-width="4" stroke-dasharray="1.2 6.13" style="stroke:rgb(var(--sky)/.26)"/>
           <circle cx="135" cy="135" r="88" fill="none" style="stroke:rgb(var(--sky)/.12)"/>
           <g stroke-width="1" style="stroke:rgb(var(--sky)/.3)"><line x1="135" y1="26" x2="135" y2="36"/><line x1="135" y1="234" x2="135" y2="244"/><line x1="26" y1="135" x2="36" y2="135"/><line x1="234" y1="135" x2="244" y2="135"/></g>
           <path d="M44 100C58 52 98 30 135 30s77 22 91 70C196 74 164 64 135 64S74 74 44 100Z" fill="url(#k-gloss)" opacity=".55"/>
+
+          <ellipse cx="92" cy="58" rx="34" ry="12" transform="rotate(-24 92 58)" fill="url(#k-spec)" opacity=".7"/>
+          <path d="M46.5 197A108 108 0 0 0 223.5 197" fill="none" stroke-width="2.4" stroke-linecap="round" filter="url(#k-glow)" style="stroke:rgb(var(--brand-2)/.6)"/>
 
           <!-- cheeks -->
           <ellipse cx="64" cy="170" rx="15" ry="7" style="fill:rgb(var(--brand-2)/.1)"/>
           <ellipse cx="206" cy="170" rx="15" ry="7" style="fill:rgb(var(--brand-2)/.1)"/>
 
           <!-- brows -->
-          <path d="M68 90Q97 80 126 90M144 90Q173 80 202 90" fill="none" stroke-width="2.3" stroke-linecap="round" style="stroke:rgb(var(--sky))"/>
+          <path class="brows" d="M68 90Q97 80 126 90M144 90Q173 80 202 90" fill="none" stroke-width="2.3" stroke-linecap="round" style="stroke:rgb(var(--sky))"/>
 
           <!-- eyes -->
+          <g class="eyes-boot">
           <g class="eye">
             <circle cx="97" cy="120" r="28" stroke-width="2" style="fill:rgb(var(--bg-1));stroke:rgb(var(--sky)/.9)"/>
-            <circle cx="97" cy="120" r="19" fill="none" stroke-width="1" stroke-dasharray="3 5" style="stroke:rgb(var(--brand-2)/.45)"/>
+            <circle cx="97" cy="120" r="24" fill="none" stroke-width="1" style="stroke:rgb(var(--brand-2)/.2)"/>
+            <circle cx="97" cy="120" r="18" fill="url(#k-iris)"/>
+            <circle class="iris" cx="97" cy="120" r="19" fill="none" stroke-width="1.2" stroke-dasharray="3 5" style="stroke:rgb(var(--brand-2)/.6)"/>
+            <circle class="iris rev" cx="97" cy="120" r="15" fill="none" stroke-width="1" stroke-dasharray="1 7" style="stroke:rgb(var(--ice)/.45)"/>
             <g class="look"><g class="pupil">
               <circle cx="97" cy="120" r="10" fill="none" stroke-width="2.2" filter="url(#k-glow)" style="stroke:rgb(var(--brand-2))"/>
               <circle cx="97" cy="120" r="4.5" filter="url(#k-glow)" style="fill:rgb(var(--ice))"/>
@@ -1132,28 +1322,36 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
           </g>
           <g class="eye e2">
             <circle cx="173" cy="120" r="28" stroke-width="2" style="fill:rgb(var(--bg-1));stroke:rgb(var(--sky)/.9)"/>
-            <circle cx="173" cy="120" r="19" fill="none" stroke-width="1" stroke-dasharray="3 5" style="stroke:rgb(var(--brand-2)/.45)"/>
+            <circle cx="173" cy="120" r="24" fill="none" stroke-width="1" style="stroke:rgb(var(--brand-2)/.2)"/>
+            <circle cx="173" cy="120" r="18" fill="url(#k-iris)"/>
+            <circle class="iris" cx="173" cy="120" r="19" fill="none" stroke-width="1.2" stroke-dasharray="3 5" style="stroke:rgb(var(--brand-2)/.6)"/>
+            <circle class="iris rev" cx="173" cy="120" r="15" fill="none" stroke-width="1" stroke-dasharray="1 7" style="stroke:rgb(var(--ice)/.45)"/>
             <g class="look"><g class="pupil">
               <circle cx="173" cy="120" r="10" fill="none" stroke-width="2.2" filter="url(#k-glow)" style="stroke:rgb(var(--brand-2))"/>
               <circle cx="173" cy="120" r="4.5" filter="url(#k-glow)" style="fill:rgb(var(--ice))"/>
             </g></g>
             <circle cx="164" cy="111" r="2.4" style="fill:rgb(var(--hi)/.75)"/>
           </g>
+          </g>
 
           <!-- nose + mouth -->
           <circle cx="135" cy="163" r="12" style="fill:rgb(var(--bg-1));stroke:rgb(var(--sky)/.22)"/>
           <circle cx="135" cy="163" r="3.5" filter="url(#k-glow)" style="fill:rgb(var(--brand-2))"/>
           <path d="M88 195Q135 225 182 195" fill="none" stroke-width="2.6" stroke-linecap="round" filter="url(#k-glow)" style="stroke:rgb(var(--ice))"/>
+          <path class="trace" d="M88 195Q135 225 182 195" pathLength="100" stroke-dasharray="12 88" fill="none" stroke-width="2.6" stroke-linecap="round" filter="url(#k-glow)" style="stroke:rgb(var(--hi))"/>
           <circle cx="88" cy="195" r="4" style="fill:rgb(var(--accent))"/>
           <circle cx="182" cy="195" r="4" style="fill:rgb(var(--accent))"/>
 
           <!-- antenna -->
           <circle cx="135" cy="23" r="6" stroke-width="1.5" style="fill:rgb(var(--bg-1));stroke:rgb(var(--ice))"/>
+          <circle class="sig" cx="135" cy="23" r="6" fill="none" stroke-width="1.2" style="stroke:rgb(var(--brand-2))"/>
+          <circle class="sig s2" cx="135" cy="23" r="6" fill="none" stroke-width="1.2" style="stroke:rgb(var(--brand-2))"/>
           <circle class="ant" cx="135" cy="23" r="3" filter="url(#k-glow)" style="fill:rgb(var(--gold))"/>
         </svg>
         <div class="scan" aria-hidden="true"></div>
       </div>
       <div class="face-shadow" aria-hidden="true"></div>
+      <div class="floor" aria-hidden="true"><i></i><i></i><i></i></div>
     </div>
 
     <div class="face-title reveal" style="--i:2">
@@ -1216,25 +1414,47 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
 (() => {
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 
-  /* ---- Eyes follow the pointer, face tilts a few degrees ---- */
+  /* ---- Eyes follow the pointer (or the tilt of your phone); the whole backdrop drifts a few px for depth ---- */
   const stage = document.querySelector('.face-stage');
+  const bgEl = document.querySelector('.bg-lux');
+  let lastPtr = 0;
   if (stage && !reduce.matches) {
     let tx = 0, ty = 0, cx = 0, cy = 0, raf = 0;
     const clamp = v => Math.max(-1, Math.min(1, v));
     const loop = () => {
       cx += (tx - cx) * .14; cy += (ty - cy) * .14;
-      stage.style.setProperty('--ex', cx.toFixed(3));
-      stage.style.setProperty('--ey', cy.toFixed(3));
+      const sx = cx.toFixed(3), sy = cy.toFixed(3);
+      stage.style.setProperty('--ex', sx); stage.style.setProperty('--ey', sy);
+      if (bgEl) { bgEl.style.setProperty('--ex', sx); bgEl.style.setProperty('--ey', sy); }
       raf = (Math.abs(tx - cx) + Math.abs(ty - cy) > .002) ? requestAnimationFrame(loop) : 0;
     };
+    const kick = () => { if (!raf) raf = requestAnimationFrame(loop); };
     const aim = (x, y) => {
       const r = stage.getBoundingClientRect();
       tx = clamp((x - r.left - r.width / 2) / (innerWidth * .5));
       ty = clamp((y - r.top - r.height / 2) / (innerHeight * .5));
-      if (!raf) raf = requestAnimationFrame(loop);
+      kick();
     };
-    addEventListener('pointermove', e => aim(e.clientX, e.clientY), { passive: true });
-    document.addEventListener('mouseleave', () => { tx = ty = 0; if (!raf) raf = requestAnimationFrame(loop); });
+    addEventListener('pointermove', e => { lastPtr = performance.now(); aim(e.clientX, e.clientY); }, { passive: true });
+    document.addEventListener('mouseleave', () => { tx = ty = 0; kick(); });
+    /* phones: tilt the device and the robot (and the stars behind it) follow */
+    if (matchMedia('(pointer: coarse)').matches && 'DeviceOrientationEvent' in window && typeof DeviceOrientationEvent.requestPermission !== 'function') {
+      addEventListener('deviceorientation', e => {
+        if (e.gamma == null || e.beta == null || performance.now() - lastPtr < 1600) return;
+        tx = clamp(e.gamma / 22); ty = clamp((e.beta - 55) / 26); kick();
+      }, { passive: true });
+    }
+  }
+
+  /* ---- Soft light that follows a mouse ---- */
+  const glow = document.querySelector('.glow-cursor');
+  if (glow && !reduce.matches && matchMedia('(pointer: fine)').matches) {
+    let gx = 0, gy = 0, gr = 0;
+    addEventListener('pointermove', e => {
+      gx = e.clientX; gy = e.clientY; glow.classList.add('on');
+      if (!gr) gr = requestAnimationFrame(() => { gr = 0; glow.style.transform = `translate3d(${gx}px,${gy}px,0)`; });
+    }, { passive: true });
+    document.addEventListener('mouseleave', () => glow.classList.remove('on'));
   }
 
   /* ---- Drifting particles + faint constellation lines (colors read from CSS tokens) ---- */
@@ -1242,8 +1462,12 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
   if (cv && cv.getContext) {
     const ctx = cv.getContext('2d');
     const css = getComputedStyle(document.documentElement);
-    const aqua = css.getPropertyValue('--brand-2').trim(), sky = css.getPropertyValue('--sky').trim(), gold = css.getPropertyValue('--gold').trim();
-    let w = 0, h = 0, P = [], last = 0, running = false;
+    const aqua = css.getPropertyValue('--brand-2').trim(), sky = css.getPropertyValue('--sky').trim(), gold = css.getPropertyValue('--gold').trim(), ice = css.getPropertyValue('--ice').trim();
+    let w = 0, h = 0, P = [], S = [], last = 0, running = false, shotIn = 2600;
+    const ptr = { x: -999, y: -999, t: -1e9 };
+    const touch = e => { ptr.x = e.clientX; ptr.y = e.clientY; ptr.t = performance.now(); };
+    addEventListener('pointermove', touch, { passive: true });
+    addEventListener('pointerdown', touch, { passive: true });
 
     const size = () => {
       const dpr = Math.min(devicePixelRatio || 1, 1.5);
@@ -1260,7 +1484,12 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
     };
     const draw = dt => {
       ctx.clearRect(0, 0, w, h);
+      const live = performance.now() - ptr.t < 1400;
       for (const p of P) {
+        if (live) { /* particles shy away from your finger / cursor */
+          const dx = p.x - ptr.x, dy = p.y - ptr.y, d2 = dx * dx + dy * dy;
+          if (d2 < 14400 && d2 > 1) { const d = Math.sqrt(d2), k = (1 - d / 120) * 140 * dt / 1000; p.x += dx / d * k; p.y += dy / d * k; }
+        }
         p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000; p.t += dt * .002;
         if (p.x < -10) p.x = w + 10; else if (p.x > w + 10) p.x = -10;
         if (p.y < -10) p.y = h + 10; else if (p.y > h + 10) p.y = -10;
@@ -1273,6 +1502,34 @@ if(/[?&]deriv_connected=1/.test(location.search)){window.IPLoader.show();}
         if (d2 < 14400) {
           ctx.strokeStyle = `rgb(${sky} / ${((1 - d2 / 14400) * .12).toFixed(3)})`;
           ctx.beginPath(); ctx.moveTo(P[i].x, P[i].y); ctx.lineTo(P[j].x, P[j].y); ctx.stroke();
+        }
+      }
+      if (live) { /* a faint web from the touch point to nearby stars */
+        for (const p of P) {
+          const dx = p.x - ptr.x, dy = p.y - ptr.y, d2 = dx * dx + dy * dy;
+          if (d2 < 28900) {
+            ctx.strokeStyle = `rgb(${aqua} / ${((1 - d2 / 28900) * .35).toFixed(3)})`;
+            ctx.beginPath(); ctx.moveTo(ptr.x, ptr.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+          }
+        }
+      }
+      /* the odd shooting star */
+      if (dt > 0 && !reduce.matches) {
+        shotIn -= dt;
+        if (shotIn <= 0) {
+          shotIn = 3800 + Math.random() * 5200;
+          const a = .38 + Math.random() * .3, sp = 560 + Math.random() * 260;
+          S.push({ x: Math.random() * w * .85, y: Math.random() * h * .38, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, age: 0, life: 950 });
+        }
+        for (let i = S.length - 1; i >= 0; i--) {
+          const q = S[i]; q.age += dt; q.x += q.vx * dt / 1000; q.y += q.vy * dt / 1000;
+          const k = 1 - q.age / q.life;
+          if (k <= 0) { S.splice(i, 1); continue; }
+          const m = Math.hypot(q.vx, q.vy), len = 40 + 110 * k, ux = q.vx / m, uy = q.vy / m;
+          const g = ctx.createLinearGradient(q.x, q.y, q.x - ux * len, q.y - uy * len);
+          g.addColorStop(0, `rgb(${ice} / ${(.95 * k).toFixed(2)})`); g.addColorStop(1, `rgb(${ice} / 0)`);
+          ctx.strokeStyle = g; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q.x - ux * len, q.y - uy * len); ctx.stroke();
+          ctx.fillStyle = `rgb(${ice} / ${k.toFixed(2)})`; ctx.beginPath(); ctx.arc(q.x, q.y, 1.7, 0, 6.2832); ctx.fill();
         }
       }
     };
@@ -1409,6 +1666,64 @@ initialRoute();
 })();
 
 
+
+/* ---- Touch & mouse feel: tilt, spotlight, press ripple, tiny haptic tick. Pure decoration:
+        it never touches your click handlers or the buttons' content. ---- */
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  const SEL = '.card,.activate,.connect';
+  let raf = 0, pend = null;
+  const hit = e => (e.target && e.target.closest) ? e.target.closest(SEL) : null;
+
+  const apply = () => {
+    raf = 0; if (!pend) return;
+    const { el, x, y } = pend, r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const px = Math.max(0, Math.min(1, (x - r.left) / r.width)), py = Math.max(0, Math.min(1, (y - r.top) / r.height));
+    el.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+    el.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+    if (el.classList.contains('card') && !reduce.matches) {
+      el.style.setProperty('--ry', ((px - .5) * 10).toFixed(2) + 'deg');
+      el.style.setProperty('--rx', ((.5 - py) * 8).toFixed(2) + 'deg');
+    }
+  };
+  const reset = el => { el.style.removeProperty('--rx'); el.style.removeProperty('--ry'); el.classList.remove('touching'); };
+
+  const ripple = (el, e) => {
+    const host = el.classList.contains('card') ? (el.querySelector('.sheen') || el) : el;
+    const r = host.getBoundingClientRect(), d = Math.max(r.width, r.height) * 1.15;
+    const s = document.createElement('span');
+    s.className = 'rip'; s.setAttribute('aria-hidden', 'true');
+    s.style.cssText = `--d:${d.toFixed(0)}px;--x:${(e.clientX - r.left).toFixed(0)}px;--y:${(e.clientY - r.top).toFixed(0)}px`;
+    host.appendChild(s);
+    s.addEventListener('animationend', () => s.remove(), { once: true });
+    setTimeout(() => s.remove(), 1400);
+  };
+
+  document.addEventListener('pointermove', e => {
+    const el = hit(e); if (!el) return;
+    pend = { el, x: e.clientX, y: e.clientY }; if (!raf) raf = requestAnimationFrame(apply);
+  }, { passive: true });
+
+  document.addEventListener('pointerdown', e => {
+    const el = hit(e); if (!el || e.button > 0) return;
+    pend = { el, x: e.clientX, y: e.clientY }; apply();
+    el.classList.add('touching');
+    if (!reduce.matches) ripple(el, e);
+    if (e.pointerType === 'touch' && navigator.vibrate) { try { navigator.vibrate(8); } catch (_) {} }
+  }, { passive: true });
+
+  const up = e => {
+    const el = hit(e); if (!el) return;
+    if (e.pointerType === 'mouse') el.classList.remove('touching');
+    else setTimeout(() => reset(el), 240);
+  };
+  document.addEventListener('pointerup', up, { passive: true });
+  document.addEventListener('pointercancel', up, { passive: true });
+  document.addEventListener('pointerout', e => {
+    const el = hit(e); if (el && !el.contains(e.relatedTarget)) reset(el);
+  }, { passive: true });
+})();
 </script>
 </body>
 </html>
