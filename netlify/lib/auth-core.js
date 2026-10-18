@@ -97,10 +97,17 @@ function respond(statusCode, bodyObj, setCookies) {
 // The AAD binds each ciphertext to its user + slot + purpose, so a stolen or
 // copied value cannot be replayed into a different row.
 function encryptionKey() {
-  const raw = process.env.TOKEN_ENCRYPTION_KEY || '';
-  const key = Buffer.from(raw, 'base64');
-  if (key.length !== 32) throw new ConfigError('TOKEN_ENCRYPTION_KEY must be 32 random bytes, base64-encoded');
-  return key;
+  // Tolerant of how the value was pasted into Netlify: surrounding spaces, quotes, a "KEY=" prefix.
+  let raw = String(process.env.TOKEN_ENCRYPTION_KEY || '').trim().replace(/^TOKEN_ENCRYPTION_KEY\s*=\s*/, '').replace(/^["']|["']$/g, '').trim();
+  if (!raw) throw new ConfigError('TOKEN_ENCRYPTION_KEY is not set');
+  // 1) proper form: 32 random bytes, base64 (or base64url)
+  const b64 = Buffer.from(raw.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+  if (/^[A-Za-z0-9+/_-]+={0,2}$/.test(raw) && b64.length === 32) return b64;
+  // 2) 64 hex characters = 32 bytes
+  if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, 'hex');
+  // 3) any other secret of at least 32 characters: stretch it to 32 bytes (SHA-256)
+  if (raw.length >= 32) return crypto.createHash('sha256').update(raw, 'utf8').digest();
+  throw new ConfigError('TOKEN_ENCRYPTION_KEY is too short: use at least 32 random characters (or 32 random bytes, base64)');
 }
 function assertEncryptionConfigured() { encryptionKey(); }
 

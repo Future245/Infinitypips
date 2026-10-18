@@ -37,7 +37,7 @@ Trading logic, strategy and the 8-worker pool are unchanged.
 
 ## Deploy (in this order)
 
-1. **Generate a key** (keep it secret, back it up - losing it means everyone re-authorizes):
+1. **Make a key** (keep it secret, back it up - losing it means everyone re-authorizes): any random secret of at least 32 characters works (a password-manager "random" password is fine), or generate one with:
    `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
 2. **Netlify -> Environment variables**: add `TOKEN_ENCRYPTION_KEY` = that value.
    Optional: `SESSION_TTL_DAYS` (default 30), `SERIAL_SESSION_TTL_DAYS` (default 30).
