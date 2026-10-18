@@ -53,9 +53,19 @@
 
   /* ---------- content ---------- */
   .box{ position:relative; z-index:2; width:100%; max-width:380px; display:flex; flex-direction:column; align-items:center; gap:16px; }
-  .brand{ display:flex; align-items:center; gap:9px; font:800 12px/1 var(--font-d); letter-spacing:.34em; text-transform:uppercase; color:var(--ink2); margin-bottom:10px; }
-  .brand svg{ width:26px; height:13px; fill:none; stroke:var(--b2); stroke-width:2.6; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 0 6px rgba(77,166,255,.9)); }
-  .brand b{ font-weight:800; color:var(--ink); }
+  .brand{ display:flex; flex-direction:column; align-items:center; gap:12px; margin:2px 0 14px; }
+  .brand .mark{ position:relative; width:50px; height:50px; border-radius:16px; display:grid; place-items:center; overflow:hidden;
+    background:linear-gradient(145deg,rgba(158,227,255,.30),rgba(47,107,255,.16) 46%,rgba(8,20,48,.9));
+    border:1px solid rgba(190,230,255,.55);
+    box-shadow:0 0 0 4px rgba(77,166,255,.08), 0 10px 30px rgba(47,107,255,.45), 0 0 34px rgba(77,166,255,.35), inset 0 1px 0 rgba(255,255,255,.45), inset 0 -10px 18px rgba(47,107,255,.25); }
+  .brand .mark svg{ position:relative; width:30px; height:15px; fill:none; stroke:#fff; stroke-width:2.8; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 0 7px rgba(120,210,255,1)); }
+  .brand .mark::after{ content:""; position:absolute; top:-20%; bottom:-20%; left:0; width:38%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent); transform:translateX(-140%) skewX(-20deg); }
+  .brand .word{ display:flex; align-items:baseline; justify-content:center; gap:.5em; font:800 23px/1 var(--font-d); letter-spacing:.3em; text-transform:uppercase; padding-left:.3em; filter:drop-shadow(0 4px 18px rgba(47,107,255,.55)); }
+  .brand .word b{ font-weight:800; background:linear-gradient(180deg,#ffffff 12%,#cfe6ff 100%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .brand .word i{ font-style:normal; font-weight:800; background:linear-gradient(180deg,#bfeaff 5%,#4da6ff 95%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .brand .tag{ display:flex; align-items:center; gap:12px; font:500 9.5px/1 var(--font-m); letter-spacing:.42em; text-transform:uppercase; color:var(--ink3); padding-left:.42em; }
+  .brand .tag u{ display:block; width:34px; height:1px; background:linear-gradient(90deg,transparent,rgba(158,227,255,.65)); }
+  .brand .tag u:last-child{ background:linear-gradient(90deg,rgba(158,227,255,.65),transparent); }
 
   .orb{ position:relative; width:176px; height:176px; display:grid; place-items:center; margin:2px 0 8px; }
   .orb .halo{ position:absolute; inset:-34%; border-radius:50%; background:radial-gradient(circle,rgba(77,166,255,.38) 0%,rgba(77,166,255,.12) 42%,transparent 70%); }
@@ -113,6 +123,7 @@
     .floor i{ animation:floorMove 3.2s linear infinite; }
     .spark{ animation:rise var(--d,9s) linear infinite; animation-delay:var(--w,0s); }
     .market path{ stroke-dasharray:1400; stroke-dashoffset:1400; animation:draw 7s ease-in-out infinite; }
+    .brand .mark::after{ animation:shine 4.6s ease-in-out infinite; }
     .orb .halo{ animation:halo 3.4s ease-in-out infinite; }
     .orb .ring.r1{ animation:spin 3.2s linear infinite; }
     .orb .ring.r2{ animation:spin 5.4s linear infinite reverse; }
@@ -128,6 +139,7 @@
     .box > *:nth-child(5){ animation-delay:.32s } .box > *:nth-child(6){ animation-delay:.4s } .box > *:nth-child(7){ animation-delay:.48s } .box > *:nth-child(8){ animation-delay:.56s }
   }
   @media (prefers-reduced-motion:reduce){ .ipl-msg,.st,.st i,.link::after{ transition:none; } .market path{ stroke-dashoffset:0; } .spark{ display:none; } }
+  @keyframes shine{ 0%,58%{ transform:translateX(-140%) skewX(-20deg) } 100%{ transform:translateX(330%) skewX(-20deg) } }
   @keyframes spin{ to{ transform:rotate(360deg) } }
   @keyframes flow{ to{ stroke-dashoffset:-200 } }
   @keyframes halo{ 0%,100%{ transform:scale(.92); opacity:.7 } 50%{ transform:scale(1.08); opacity:1 } }
@@ -141,8 +153,12 @@
   @keyframes floorMove{ to{ transform:translateY(56px) } }
   @keyframes rise{ 0%{ transform:translate3d(0,0,0); opacity:0 } 12%{ opacity:.95 } 80%{ opacity:.7 } 100%{ transform:translate3d(var(--x,0px),-70vh,0); opacity:0 } }
   @keyframes draw{ 0%{ stroke-dashoffset:1400 } 55%,80%{ stroke-dashoffset:0 } 100%{ stroke-dashoffset:-1400 } }
-  @media (max-width:340px){ .ipl-tag span{ display:none } h1{ font-size:22px } .orb{ width:150px; height:150px } .orb .core{ width:90px; height:90px } }
-  @media (max-height:600px){ .orb{ transform:scale(.8); margin:-12px 0 -4px } .fine{ display:none } }
+  @media (max-width:340px){ .ipl-tag span{ display:none } h1{ font-size:22px } .brand .word{ font-size:19px } .brand .tag{ letter-spacing:.3em } .brand .tag u{ width:18px } .orb{ width:150px; height:150px } .orb .core{ width:90px; height:90px } }
+  @media (max-height:660px){
+    .box{ gap:10px } .brand{ margin:0 0 4px; gap:9px } .brand .mark{ width:42px; height:42px; border-radius:13px } .brand .word{ font-size:20px }
+    .orb{ width:128px; height:128px; margin:0 } .orb .core{ width:80px; height:80px } .orb .core svg{ width:48px; height:24px }
+    h1{ font-size:21px } p{ font-size:13.5px; line-height:1.55 } .fine{ display:none } .ipl-status{ min-height:48px; margin-top:0 } .st{ gap:6px }
+  }
 </style>
 </head>
 <body>
@@ -163,7 +179,7 @@
 </div>
 
 <div class="box" id="box">
-  <div class="brand" aria-hidden="true"><svg viewBox="0 0 48 24"><path d="M24 12C19 5 6 5 6 12s13 7 18 0 18-7 18 0-13 7-18 0Z"/></svg><span><b>Infinity</b> Pips</span></div>
+  <div class="brand" aria-hidden="true"><span class="mark"><svg viewBox="0 0 48 24"><path d="M24 12C19 5 6 5 6 12s13 7 18 0 18-7 18 0-13 7-18 0Z"/></svg></span><span class="word"><b>Infinity</b><i>Pips</i></span><span class="tag"><u></u>Apex Intelligence<u></u></span></div>
 
   <div class="orb" id="orb" aria-hidden="true">
     <div class="halo"></div>
