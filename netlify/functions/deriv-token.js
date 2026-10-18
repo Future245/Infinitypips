@@ -36,12 +36,13 @@
 
 const { Client } = require('pg');
 const crypto = require('crypto');
+const core = require('../lib/auth-core');
 
-const DERIV_TOKEN_URL = 'https://auth.deriv.com/oauth2/token';
-const ACCOUNTS_URL = 'https://api.derivws.com/trading/v1/options/accounts';
+const DERIV_TOKEN_URL = core.derivTokenUrl();
+const ACCOUNTS_URL = core.derivApiBase() + '/trading/v1/options/accounts';
 
 const SESSION_COOKIE = 'app_session';
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const SESSION_TTL_SECONDS = core.sessionTtlSeconds(); // SESSION_TTL_DAYS, default 30
 const MAX_SLOT = 8;
 
 // Slot 1 keeps using the original DERIV_CLIENT_ID variable so existing
@@ -81,6 +82,12 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'server_misconfigured', message: 'DATABASE_URL env var is not set' }) };
   }
 
+  // Credentials are stored encrypted; without the key we refuse to proceed rather than store or leak them.
+  try { core.assertEncryptionConfigured(); } catch (err) {
+    console.error(err.message);
+    return { statusCode: 500, body: JSON.stringify({ error: 'server_misconfigured', message: err.message }) };
+  }
+
   let payload;
   try {
     payload = JSON.parse(event.body || '{}');
@@ -118,15 +125,17 @@ exports.handler = async function (event) {
     redirect_uri: redirectUri
   });
 
-  let accessToken, expiresIn, tokenType;
+  let accessToken, expiresIn, tokenType, refreshToken, tokenScope;
   try {
-    const response = await fetch(DERIV_TOKEN_URL, {
+    const response = await core.fetchWithTimeout(DERIV_TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString()
     });
     const data = await response.json();
     console.log('Deriv token endpoint responded:', response.status);
+    // Field NAMES only (never values): this is how to see whether Deriv really issues refresh tokens to this app.
+    console.log('Deriv token response fields:', Object.keys(data || {}).join(','), '| refresh_token issued:', !!(data && data.refresh_token), '| expires_in:', data && data.expires_in);
 
     if (!response.ok) {
       return { statusCode: response.status, body: JSON.stringify(data) };
@@ -134,6 +143,8 @@ exports.handler = async function (event) {
     accessToken = data.access_token;
     expiresIn = data.expires_in;
     tokenType = data.token_type;
+    refreshToken = data.refresh_token || null;
+    tokenScope = data.scope || null;
   } catch (err) {
     console.error('Upstream error calling Deriv token endpoint:', err.message);
     return { statusCode: 502, body: JSON.stringify({ error: 'upstream_error', message: err.message }) };
@@ -142,7 +153,7 @@ exports.handler = async function (event) {
   // --- Identify the real, authenticated Deriv account server-side ---
   let accounts;
   try {
-    const acctResponse = await fetch(ACCOUNTS_URL, {
+    const acctResponse = await core.fetchWithTimeout(ACCOUNTS_URL, {
       headers: { 'Authorization': 'Bearer ' + accessToken, 'Deriv-App-ID': DERIV_CLIENT_ID }
     });
     const acctData = await acctResponse.json();
@@ -169,8 +180,13 @@ exports.handler = async function (event) {
   const incomingSessionToken = cookies[SESSION_COOKIE];
 
   // --- Automatic account linking (no manual whitelist step) ---
-  const client = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-  await client.connect();
+  let client;
+  try {
+    client = await core.connectDb();
+  } catch (err) {
+    console.error('database unavailable:', err.message);
+    return { statusCode: 503, headers: { 'Cache-Control': 'no-store' }, body: JSON.stringify({ error: 'database_unavailable', message: 'The database is temporarily unavailable. Please try again in a moment.' }) };
+  }
 
   try {
     await client.query('BEGIN');
@@ -281,6 +297,13 @@ exports.handler = async function (event) {
       await client.query('ROLLBACK TO SAVEPOINT record_connection');
     }
 
+    // Persist this slot's Deriv credentials (encrypted) in the SAME transaction as the account link,
+    // so the slot is never recorded as connected without usable credentials behind it.
+    await core.saveCredentials(client, {
+      appUserId: appUserId, slot: slot, clientId: DERIV_CLIENT_ID, loginid: canonicalLoginid,
+      accessToken: accessToken, refreshToken: refreshToken, expiresIn: expiresIn, scope: tokenScope
+    });
+
     await client.query('COMMIT');
 
     return {
@@ -289,13 +312,12 @@ exports.handler = async function (event) {
         'Set-Cookie': SESSION_COOKIE + '=' + newSessionToken + '; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=' + SESSION_TTL_SECONDS
       },
       body: JSON.stringify({
-        // Still returned so the existing frontend (Ariana.html) can keep
-        // talking to Deriv's own trading WebSocket API directly, exactly as
-        // it does today — that connection isn't proxied through our
-        // backend, so the client genuinely needs this token.
-        access_token: accessToken,
+        // The access token is NOT returned: it stays encrypted on the server. The browser gets
+        // a one-time WebSocket URL from deriv-ws-otp.js when it needs to trade.
+        connected: true,
+        persistent: true,
+        refresh_available: !!refreshToken,
         expires_in: expiresIn,
-        token_type: tokenType,
         loginid: canonicalLoginid,
         slot: slot
       })

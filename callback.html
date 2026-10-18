@@ -181,18 +181,12 @@
       return;
     }
 
-    if (result.data.access_token){
-      // sessionStorage is the simplest place to hand the token to the rest
-      // of the app. For a production trading tool, consider having the
-      // function set it as a short-lived, httpOnly cookie instead.
-      // One token per app slot. Slot 1 is also stored under the original
-      // key so Ariana.html and the rest of the app keep working unchanged.
-      sessionStorage.setItem('deriv_access_token_' + slot, result.data.access_token);
-      if (slot === 1){ sessionStorage.setItem('deriv_access_token', result.data.access_token); }
+    // The server keeps the Deriv credentials (encrypted). The browser is told only that this app is connected.
+    if (result.data.connected){
       if (result.data.loginid){ sessionStorage.setItem('deriv_loginid', result.data.loginid); }
       showSuccess(slot);
     } else {
-      showError('No access token returned.');
+      showError('The connection could not be completed. Please try again.');
     }
   })
   .catch(function(err){

@@ -20,7 +20,7 @@
 // Environment variables required:
 //   DATABASE_URL - the Neon Postgres connection string
 
-const { Client } = require('pg');
+const core = require('../lib/auth-core');
 
 function parseCookies(header) {
   const out = {};
@@ -49,12 +49,18 @@ exports.handler = async function (event) {
     return { statusCode: 200, body: JSON.stringify({ authorized: false }) };
   }
 
-  const client = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-  await client.connect();
+  let client;
+  try {
+    client = await core.connectDb();
+  } catch (err) {
+    console.error('database unavailable:', err.message);
+    return { statusCode: 503, headers: { 'Cache-Control': 'no-store' }, body: JSON.stringify({ error: 'backend_unavailable', retryable: true }) };
+  }
 
   try {
     const res = await client.query(
-      'SELECT serial_key FROM serial_key_sessions WHERE session_token = $1 AND expires_at > now()',
+      'SELECT s.serial_key FROM serial_key_sessions s JOIN serial_keys k ON k.serial_key = s.serial_key ' +
+      "WHERE s.session_token = $1 AND s.expires_at > now() AND k.status = 'active'",
       [sessionToken]
     );
 

@@ -26,11 +26,11 @@
 // are added to serial_keys manually (e.g. via the Neon SQL console), by
 // design, per the current (temporary) key-management approach.
 
-const { Client } = require('pg');
+const core = require('../lib/auth-core');
 const crypto = require('crypto');
 
 const SESSION_COOKIE = 'portal_session';
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const SESSION_TTL_SECONDS = core.licenseTtlSeconds(); // SERIAL_SESSION_TTL_DAYS, default 30
 const KEY_FORMAT = /^\d{4}-\d{4}-\d{4}$/; // e.g. 4827-1936-7504
 
 exports.handler = async function (event) {
@@ -59,8 +59,13 @@ exports.handler = async function (event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'invalid_format', authorized: false }) };
   }
 
-  const client = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-  await client.connect();
+  let client;
+  try {
+    client = await core.connectDb();
+  } catch (err) {
+    console.error('database unavailable:', err.message);
+    return { statusCode: 503, headers: { 'Cache-Control': 'no-store' }, body: JSON.stringify({ error: 'backend_unavailable', authorized: false, retryable: true }) };
+  }
 
   try {
     // A key is valid only if it exists AND is active. Nothing here ever

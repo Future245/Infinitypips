@@ -9,7 +9,7 @@
 // This is what lets "Access Robot" recognize a returning user even after
 // they've closed the browser completely and sessionStorage is gone.
 
-const { Client } = require('pg');
+const core = require('../lib/auth-core');
 
 function parseCookies(header) {
   const out = {};
@@ -38,8 +38,13 @@ exports.handler = async function (event) {
     return { statusCode: 200, body: JSON.stringify({ registered: false }) };
   }
 
-  const client = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-  await client.connect();
+  let client;
+  try {
+    client = await core.connectDb();
+  } catch (err) {
+    console.error('database unavailable:', err.message);
+    return { statusCode: 503, headers: { 'Cache-Control': 'no-store' }, body: JSON.stringify({ error: 'backend_unavailable', retryable: true }) };
+  }
 
   try {
     const res = await client.query(

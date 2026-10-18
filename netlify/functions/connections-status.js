@@ -12,7 +12,7 @@
 // Environment variables required:
 //   DATABASE_URL - the Neon Postgres connection string
 
-const { Client } = require('pg');
+const core = require('../lib/auth-core');
 
 const MAX_SLOT = 8;
 
@@ -54,8 +54,13 @@ exports.handler = async function (event) {
     };
   }
 
-  const client = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-  await client.connect();
+  let client;
+  try {
+    client = await core.connectDb();
+  } catch (err) {
+    console.error('database unavailable:', err.message);
+    return { statusCode: 503, headers: { 'Cache-Control': 'no-store' }, body: JSON.stringify({ error: 'backend_unavailable', retryable: true }) };
+  }
 
   try {
     const sessionRes = await client.query(

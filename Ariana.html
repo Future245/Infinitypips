@@ -1937,7 +1937,7 @@
       <!-- Holo Toggle – bottom-right of card -->
       <div class="toggle-container">
         <div class="toggle-wrap">
-          <input class="toggle-input" id="holo-toggle" type="checkbox" />
+          <input class="toggle-input" id="holo-toggle" type="checkbox" autocomplete="off" />
           <label class="toggle-track" for="holo-toggle">
             <div class="track-lines"><div class="track-line"></div></div>
             <div class="toggle-thumb">
@@ -3249,10 +3249,49 @@ body::after{
     })();
   </script>
   <script>
+    /* -- Persistent Deriv authorization (browser side) --
+       This page never holds a Deriv access token. Each app's (1-8) credentials are
+       kept ENCRYPTED on the server and renewed there. To open a WebSocket the page
+       asks /.netlify/functions/deriv-ws-otp, which returns a one-time wss:// URL.
+       Error flags used by the connection code below:
+         needsSignIn  - website session / licence problem   -> back to the portal
+         needsReauth  - ONLY this app must be authorized again
+         fatal        - do not keep retrying this app
+       Anything else (network, Deriv down, database blip) is temporary: retry. */
+    window.IPAuth = (function () {
+      var SIGN_IN = { not_authenticated: 1, session_expired: 1, license_inactive: 1 };
+      function fetchOtp(slot, accountId) {
+        var ctl = new AbortController();
+        var timer = setTimeout(function () { ctl.abort(); }, 15000);
+        return fetch('/.netlify/functions/deriv-ws-otp', {
+          method: 'POST', credentials: 'include', cache: 'no-store', signal: ctl.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slot: slot, account_id: accountId || undefined })
+        }).then(function (res) {
+          clearTimeout(timer);
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            if (res.ok && data.url) return data;
+            var e = new Error(data.error || ('otp_http_' + res.status));
+            e.code = data.error || ''; e.slot = slot; e.status = res.status;
+            e.needsSignIn = !!SIGN_IN[e.code];
+            e.needsReauth = e.code === 'reauth_required';
+            e.fatal = e.needsSignIn || e.needsReauth || e.code === 'account_mismatch' || e.code === 'slot_not_connected';
+            throw e;
+          });
+        }, function (err) {
+          clearTimeout(timer);
+          var e = new Error(err && err.name === 'AbortError' ? 'timeout' : ((err && err.message) || 'network error'));
+          e.code = 'network'; e.slot = slot; e.fatal = false;
+          throw e;
+        });
+      }
+      return { fetchOtp: fetchOtp, goToPortal: function () { window.location.href = '/'; } };
+    })();
+  </script>
+  <script>
     /* -- Shared Deriv connection (Options REST + WebSocket / OTP flow) --
-       Reads the OAuth access token saved by callback.html, fetches the
-       user's accounts via REST, requests an authenticated WebSocket URL
-       (OTP), then keeps ONE connection open that both the balance display
+       Asks the server (IPAuth.fetchOtp) for an authenticated WebSocket URL,
+       then keeps ONE connection open that both the balance display
        and trade execution share, via window.DerivConnection. */
     (function () {
       var API_BASE = 'https://api.derivws.com';
@@ -3288,49 +3327,14 @@ body::after{
         }
       };
 
-      var token = sessionStorage.getItem('deriv_access_token');
-      if (!token) {
-        window.location.href = '/';
-        return;
-      }
-
-      var authHeaders = { 'Authorization': 'Bearer ' + token };
-
-      // Step 1: get the user's Options trading accounts
-      fetch(API_BASE + '/trading/v1/options/accounts', { headers: authHeaders })
-        .then(function (res) {
-          if (!res.ok) throw new Error('accounts_http_' + res.status);
-          return res.json();
-        })
-        .then(function (result) {
-          var accounts = result && result.data;
-          if (!Array.isArray(accounts) || accounts.length === 0) {
-            throw new Error('no_accounts');
-          }
-
-          console.log('Deriv accounts:', accounts);
-
-          // Prefer a demo/virtual account; otherwise just use the first one.
-          var account = accounts.find(function (a) {
-            return a.account_type === 'demo' || a.is_virtual === true || a.type === 'demo';
-          }) || accounts[0];
-
-          var accountId = account.id || account.account_id || account.loginid;
-          if (!accountId) throw new Error('no_account_id');
-          window.DerivConnection.accountId = accountId;
-
-          // Step 2: get an authenticated WebSocket URL (OTP) for that account
-          return fetch(API_BASE + '/trading/v1/options/accounts/' + accountId + '/otp', {
-            method: 'POST',
-            headers: authHeaders
-          });
-        })
-        .then(function (res) {
-          if (!res.ok) throw new Error('otp_http_' + res.status);
-          return res.json();
-        })
+      // Slot 1's one-time WebSocket URL comes from the server. App 1 picks the account exactly
+      // as before (demo if there is one, otherwise the first); the other apps then use the same one.
+      var mainSetupTries = 0;
+      function startMain() {
+        IPAuth.fetchOtp(1)
         .then(function (otpResult) {
-          var wsUrl = otpResult && otpResult.data && otpResult.data.url;
+          window.DerivConnection.accountId = otpResult.account_id;
+          var wsUrl = otpResult.url;
           if (!wsUrl) throw new Error('no_ws_url');
 
           // Step 3: connect using the already-authenticated URL and subscribe to balance
@@ -3390,21 +3394,15 @@ body::after{
             mainRetries += 1;
             var delay = Math.min(30000, 1000 * Math.pow(2, Math.min(mainRetries, 5)));
             setTimeout(function () {
-              fetch(API_BASE + '/trading/v1/options/accounts/' + window.DerivConnection.accountId + '/otp', {
-                method: 'POST',
-                headers: authHeaders
-              })
-                .then(function (res) {
-                  if (!res.ok) throw new Error('otp_http_' + res.status);
-                  return res.json();
-                })
-                .then(function (r) {
-                  var u = r && r.data && r.data.url;
-                  if (!u) throw new Error('no_ws_url');
-                  openMainSocket(u);
-                })
+              IPAuth.fetchOtp(1, window.DerivConnection.accountId)
+                .then(function (r) { openMainSocket(r.url); })
                 .catch(function (err) {
                   console.error('Main reconnect failed:', err.message);
+                  if (err.needsSignIn || err.needsReauth) {
+                    showBalanceError('Sign-in needed');
+                    setTimeout(IPAuth.goToPortal, 1500);
+                    return;
+                  }
                   scheduleMainReconnect();
                 });
             }, delay);
@@ -3414,8 +3412,17 @@ body::after{
         })
         .catch(function (err) {
           console.error('Connection setup failed:', err.message);
-          showBalanceError('Error: ' + err.message);
+          if (err.needsSignIn || err.needsReauth) {      // the portal shows exactly which app needs what
+            showBalanceError('Sign-in needed');
+            setTimeout(IPAuth.goToPortal, 1500);
+            return;
+          }
+          showBalanceError('Reconnecting\u2026');       // temporary (network / Deriv / database): just retry
+          mainSetupTries += 1;
+          setTimeout(startMain, Math.min(30000, 1000 * Math.pow(2, Math.min(mainSetupTries, 5))));
         });
+      }
+      startMain();
     })();
   </script>
   <script>
@@ -3450,17 +3457,25 @@ body::after{
       badge.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:9999;font:600 11px -apple-system,Inter,sans-serif;' +
         'color:#d8f6ff;background:rgba(22,15,46,.85);border:1px solid #3a2a63;border-radius:8px;padding:4px 8px;pointer-events:none;';
       // Status badge is hidden for normal use; add #debug to the address to show it.
-      if (location.hash === '#debug') document.body.appendChild(badge);
+      var debugMode = location.hash === '#debug';
+      document.body.appendChild(badge);   // hidden while all 8 apps are live; visible when any app has a problem
 
       function render() {
         var up = workers.filter(isReady).length;
         var okN = 0, failN = 0;
         workers.forEach(function (w) { okN += w.ok; failN += w.fail; });
         badge.style.whiteSpace = 'pre-line';
+        var problems = workers.filter(function (w) { return w.fatal && !isReady(w); });
+        var allUp = up === workers.length && !window.DerivPool.halted && !window.DerivPool.lastError;
+        badge.style.display = (debugMode || !allUp) ? 'block' : 'none';
+        badge.style.pointerEvents = problems.length ? 'auto' : 'none';
+        badge.style.cursor = problems.length ? 'pointer' : 'default';
+        badge.onclick = problems.length ? IPAuth.goToPortal : null;
         badge.textContent = 'Workers ' + up + '/8  ' + workers.map(function (w) {
           return (isReady(w) ? '●' : '○') + w.slot;
         }).join(' ') + (okN + failN ? '\nTrades ok ' + okN + ' / rejected ' + failN : '') +
           (window.DerivPool.getPace && okN + failN ? '\nPace ' + window.DerivPool.getPace().toFixed(1) + '/s per worker' : '') +
+          problems.map(function (w) { return '\nApp ' + w.slot + ': ' + w.status + ' (tap to fix)'; }).join('') +
           (window.DerivPool.halted ? '\n' + window.DerivPool.halted : '') +
           (window.DerivPool.lastError ? '\nLast error: ' + window.DerivPool.lastError : '');
         badge.title = workers.map(function (w) {
@@ -3476,27 +3491,11 @@ body::after{
       }
 
       function connect(w, accountId) {
-        var token = sessionStorage.getItem('deriv_access_token_' + w.slot);
-        if (!token) { w.status = 'not connected in portal'; w.fatal = true; return; }
         w.status = 'connecting';
-        var headers = { 'Authorization': 'Bearer ' + token };
-        fetch(API_BASE + '/trading/v1/options/accounts', { headers: headers })
-          .then(function (res) {
-            if (!res.ok) throw new Error('accounts_http_' + res.status);
-            return res.json();
-          })
-          .then(function (result) {
-            var list = (result && result.data) || [];
-            var match = list.find(function (a) { return (a.id || a.account_id || a.loginid) === accountId; });
-            if (!match) { w.fatal = true; throw new Error('different account'); }
-            return fetch(API_BASE + '/trading/v1/options/accounts/' + accountId + '/otp', { method: 'POST', headers: headers });
-          })
-          .then(function (res) {
-            if (!res.ok) throw new Error('otp_http_' + res.status);
-            return res.json();
-          })
+        // Each app asks the server for its OWN one-time URL, on the same account as App 1.
+        IPAuth.fetchOtp(w.slot, accountId)
           .then(function (otp) {
-            var url = otp && otp.data && otp.data.url;
+            var url = otp && otp.url;
             if (!url) throw new Error('no_ws_url');
             var ws = new WebSocket(url);
             w.ws = ws;
@@ -3518,6 +3517,11 @@ body::after{
           })
           .catch(function (err) {
             console.error('Worker ' + w.slot + ' setup failed:', err.message);
+            if (err.fatal) {                                   // do not hammer a dead authorization
+              w.fatal = true;
+              w.status = err.needsReauth ? 'needs reauthorization' : (err.needsSignIn ? 'sign-in needed' : err.code);
+              return;
+            }
             w.status = 'failed: ' + err.message;
             scheduleRetry(w, accountId);
           });
@@ -4234,6 +4238,7 @@ body::after{
 
       var power = document.getElementById('holo-toggle');
       if (power) {
+        power.checked = false;   // always open with the bot OFF; only the user's tap on Start/Power starts trading
         power.addEventListener('change', function () {
           if (power.checked) startAutoTrading();
           else stopAutoTrading();
