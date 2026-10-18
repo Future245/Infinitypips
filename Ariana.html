@@ -3460,6 +3460,17 @@ body::after{
       var debugMode = location.hash === '#debug';
       document.body.appendChild(badge);   // hidden while all 8 apps are live; visible when any app has a problem
 
+      // Centered "Loading..." shown only while the apps are first connecting (replaces the bottom-left worker list).
+      var loadingEl = document.createElement('div');
+      loadingEl.id = 'pool-loading';
+      loadingEl.textContent = 'Loading...';
+      loadingEl.setAttribute('role', 'status');
+      loadingEl.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9998;pointer-events:none;' +
+        'font:700 20px -apple-system,Inter,sans-serif;letter-spacing:.08em;color:#d8f6ff;text-shadow:0 0 14px rgba(77,210,255,.85);' +
+        'background:rgba(8,14,34,.72);border:1px solid rgba(120,200,255,.35);border-radius:14px;padding:12px 22px;';
+      document.body.appendChild(loadingEl);
+      var everAllUp = false, loadingSince = Date.now();
+
       function render() {
         var up = workers.filter(isReady).length;
         var okN = 0, failN = 0;
@@ -3467,7 +3478,12 @@ body::after{
         badge.style.whiteSpace = 'pre-line';
         var problems = workers.filter(function (w) { return w.fatal && !isReady(w); });
         var allUp = up === workers.length && !window.DerivPool.halted && !window.DerivPool.lastError;
-        badge.style.display = (debugMode || !allUp) ? 'block' : 'none';
+        if (allUp) everAllUp = true;
+        var stillConnecting = !everAllUp && (Date.now() - loadingSince < 25000) && !window.DerivPool.halted && workers.some(function (w) { return !isReady(w) && !w.fatal; });
+        loadingEl.style.display = stillConnecting ? 'block' : 'none';
+        // While the first connection is in progress the list stays hidden (the "Loading..." message is shown instead);
+        // it still appears for real problems, for reconnects later on, and with #debug.
+        badge.style.display = (debugMode || (!allUp && (everAllUp || !stillConnecting || problems.length))) ? 'block' : 'none';
         badge.style.pointerEvents = problems.length ? 'auto' : 'none';
         badge.style.cursor = problems.length ? 'pointer' : 'default';
         badge.onclick = problems.length ? IPAuth.goToPortal : null;
