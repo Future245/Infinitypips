@@ -47,8 +47,6 @@
       linear-gradient(90deg,rgba(120,190,255,.22) 1px,transparent 1px);
     background-size:56px 56px; }
   .spark{ position:absolute; width:3px; height:3px; border-radius:50%; background:#cfeaff; box-shadow:0 0 10px 2px rgba(120,200,255,.8); opacity:0; will-change:transform,opacity; }
-  .market{ position:absolute; left:0; right:0; bottom:12%; width:100%; height:120px; opacity:.5; }
-  .market path{ fill:none; stroke:url(#mk); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 0 6px rgba(77,166,255,.7)); }
   .vignette{ position:absolute; inset:0; background:radial-gradient(120% 90% at 50% 45%,transparent 52%,rgba(0,0,0,.62) 100%); }
 
   /* ---------- content ---------- */
@@ -122,8 +120,7 @@
     .aurora.a3{ animation:drift3 22s ease-in-out infinite alternate; }
     .floor i{ animation:floorMove 3.2s linear infinite; }
     .spark{ animation:rise var(--d,9s) linear infinite; animation-delay:var(--w,0s); }
-    .market path{ stroke-dasharray:1400; stroke-dashoffset:1400; animation:draw 7s ease-in-out infinite; }
-    .brand .mark::after{ animation:shine 4.6s ease-in-out infinite; }
+      .brand .mark::after{ animation:shine 4.6s ease-in-out infinite; }
     .orb .halo{ animation:halo 3.4s ease-in-out infinite; }
     .orb .ring.r1{ animation:spin 3.2s linear infinite; }
     .orb .ring.r2{ animation:spin 5.4s linear infinite reverse; }
@@ -138,7 +135,7 @@
     .box > *:nth-child(2){ animation-delay:.08s } .box > *:nth-child(3){ animation-delay:.16s } .box > *:nth-child(4){ animation-delay:.24s }
     .box > *:nth-child(5){ animation-delay:.32s } .box > *:nth-child(6){ animation-delay:.4s } .box > *:nth-child(7){ animation-delay:.48s } .box > *:nth-child(8){ animation-delay:.56s }
   }
-  @media (prefers-reduced-motion:reduce){ .ipl-msg,.st,.st i,.link::after{ transition:none; } .market path{ stroke-dashoffset:0; } .spark{ display:none; } }
+  @media (prefers-reduced-motion:reduce){ .ipl-msg,.st,.st i,.link::after{ transition:none; } .spark{ display:none; } }
   @keyframes shine{ 0%,58%{ transform:translateX(-140%) skewX(-20deg) } 100%{ transform:translateX(330%) skewX(-20deg) } }
   @keyframes spin{ to{ transform:rotate(360deg) } }
   @keyframes flow{ to{ stroke-dashoffset:-200 } }
@@ -152,7 +149,6 @@
   @keyframes drift3{ to{ transform:translate3d(12vmax,-8vmax,0) scale(1.15) } }
   @keyframes floorMove{ to{ transform:translateY(56px) } }
   @keyframes rise{ 0%{ transform:translate3d(0,0,0); opacity:0 } 12%{ opacity:.95 } 80%{ opacity:.7 } 100%{ transform:translate3d(var(--x,0px),-70vh,0); opacity:0 } }
-  @keyframes draw{ 0%{ stroke-dashoffset:1400 } 55%,80%{ stroke-dashoffset:0 } 100%{ stroke-dashoffset:-1400 } }
   @media (max-width:340px){ .ipl-tag span{ display:none } h1{ font-size:22px } .brand .word{ font-size:19px } .brand .tag{ letter-spacing:.3em } .brand .tag u{ width:18px } .orb{ width:150px; height:150px } .orb .core{ width:90px; height:90px } }
   @media (max-height:660px){
     .box{ gap:10px } .brand{ margin:0 0 4px; gap:9px } .brand .mark{ width:42px; height:42px; border-radius:13px } .brand .word{ font-size:20px }
@@ -166,10 +162,6 @@
 <div class="scene" aria-hidden="true">
   <div class="aurora a1"></div><div class="aurora a2"></div><div class="aurora a3"></div>
   <div class="floor"><i></i></div>
-  <svg class="market" viewBox="0 0 800 120" preserveAspectRatio="none">
-    <defs><linearGradient id="mk" x1="0" x2="1"><stop offset="0" stop-color="#4da6ff" stop-opacity="0"/><stop offset=".25" stop-color="#4da6ff"/><stop offset=".7" stop-color="#9ee3ff"/><stop offset="1" stop-color="#34e0c0" stop-opacity="0"/></linearGradient></defs>
-    <path d="M0 86 L50 78 L90 92 L140 60 L186 70 L236 34 L280 52 L330 22 L384 48 L430 30 L486 66 L540 40 L590 58 L640 18 L700 44 L760 26 L800 34"/>
-  </svg>
   <i class="spark" style="left:8%;bottom:10%;--x:18px;--d:9s;--w:-1s"></i><i class="spark" style="left:18%;bottom:6%;--x:-14px;--d:12s;--w:-5s"></i>
   <i class="spark" style="left:29%;bottom:14%;--x:22px;--d:10s;--w:-3s"></i><i class="spark" style="left:41%;bottom:4%;--x:-10px;--d:13s;--w:-8s"></i>
   <i class="spark" style="left:52%;bottom:12%;--x:16px;--d:9.5s;--w:-6s"></i><i class="spark" style="left:63%;bottom:7%;--x:-20px;--d:11s;--w:-2s"></i>
