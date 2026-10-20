@@ -3467,7 +3467,7 @@ body::after{
         var st = document.createElement('style');
         st.textContent = [
           '@property --ia{syntax:"<angle>";initial-value:0deg;inherits:false}',
-          '#ipr-alert{--ac:#ff0055;--ac2:#ff00aa;position:fixed;inset:0;z-index:10000;display:grid;place-items:center;',
+          '#ipr-alert{--ac:#ff0055;--ac2:#ff00aa;position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;',
           'padding:max(20px,env(safe-area-inset-top)) 16px max(20px,env(safe-area-inset-bottom));',
           'background:radial-gradient(60% 50% at 50% 50%,rgba(255,0,85,.14),rgba(3,6,16,.68));',
           '-webkit-backdrop-filter:blur(7px) saturate(1.2);backdrop-filter:blur(7px) saturate(1.2);',
@@ -3558,7 +3558,7 @@ body::after{
         root.addEventListener('click', function (e) { if (e.target === root && api.onDismiss) api.onDismiss(); });
         return api;
       })();
-      errUI.onDismiss = function () { dismissedSig = lastSig; clearTimeout(autoTimer); errUI.hide(); };
+      errUI.onDismiss = function () { dismissedSig = lastSig; dismissedAt = Date.now(); clearTimeout(autoTimer); errUI.hide(); };
 
       // Centered "Loading..." shown only while the apps are first connecting (replaces the bottom-left worker list).
       var loadingEl = document.createElement('div');
@@ -3570,9 +3570,13 @@ body::after{
         'background:rgba(8,14,34,.72);border:1px solid rgba(120,200,255,.35);border-radius:14px;padding:12px 22px;';
       document.body.appendChild(loadingEl);
       var everAllUp = false, loadingSince = Date.now();
+      // Add #debug to the page URL to force the popup open for a preview.
+      var debugMode = /(^|[#&?])debug(=|&|$)/i.test(String(location.hash) + String(location.search));
+      var shownSeq = 0, dismissedAt = 0;
 
       function describe(pool, problems) {
         var raw = pool.lastError || '';
+        if (debugMode && !raw && !pool.halted && !problems.length) raw = 'InsufficientBalance: insufficient to buy this contract.';
         var m = /^([A-Za-z]+):\s*(.*)$/.exec(raw);
         var code = m ? m[1] : '';
         var info = ALERT_MAP[code];
@@ -3594,7 +3598,8 @@ body::after{
                  msg: 'Some workers dropped. They are reconnecting automatically.', detail: '', action: null };
       }
 
-      function render() {
+      function render() { try { renderInner(); } catch (e) { console.error('Popup render error:', e); } }
+      function renderInner() {
         var up = workers.filter(isReady).length;
         var okN = 0, failN = 0;
         workers.forEach(function (w) { okN += w.ok; failN += w.fail; });
@@ -3618,7 +3623,12 @@ body::after{
           d.autoMs = (d.tag === 'Trade Rejected') ? 9000 : 0;
           if (d.autoMs) autoTimer = setTimeout(errUI.onDismiss, d.autoMs);
         }
+        if (sig === dismissedSig && d.tag === 'Trade Rejected' && pool.errSeq !== shownSeq && Date.now() - dismissedAt > 30000) {
+          dismissedSig = ''; lastSig = ''; fresh = true; lastSig = sig; d.autoMs = 9000;
+          clearTimeout(autoTimer); autoTimer = setTimeout(errUI.onDismiss, d.autoMs);
+        }
         if (sig === dismissedSig) return;
+        shownSeq = pool.errSeq;
         d.up = up; d.total = workers.length; d.ok = okN; d.fail = failN;
         d.pace = (pool.getPace && okN + failN) ? pool.getPace().toFixed(1) : '\u2014';
         if (!fresh) d.autoMs = 0;
@@ -3694,7 +3704,7 @@ body::after{
       }, 15000);
 
       window.DerivPool = {
-        lastError: '',
+        errSeq: 0,
         halted: '',
         workers: workers,
         send: send,
@@ -3707,6 +3717,9 @@ body::after{
           workers.slice(1).forEach(function (w) { connect(w, accountId); });
         }
       };
+      (function () { var _le = ''; Object.defineProperty(window.DerivPool, 'lastError', { enumerable: true, configurable: true,
+        get: function () { return _le; },
+        set: function (v) { _le = v; if (v) window.DerivPool.errSeq += 1; } }); })();
       render();
     })();
   </script>
