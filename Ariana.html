@@ -3456,65 +3456,76 @@ body::after{
       var dismissedSig = '', lastSig = '', autoTimer = null;
       var ALERT_MAP = {
         InsufficientBalance: ['Insufficient Balance', 'Your available balance is too low to open the next trade. The robot will automatically retry when your open trades have settled.'],
-        OpenPositionLimit: ['Position Limit Reached', 'Too many contracts are open at once. The robot pauses briefly, then continues.'],
-        RateLimit: ['Slow Down', 'Deriv is limiting the request speed. The robot is easing its pace automatically.'],
-        DailyTurnoverLimitExceeded: ['Daily Limit Reached', 'Your daily turnover limit was hit. Deriv resets it at 00:00 GMT.'],
-        MarketIsClosed: ['Market Closed', 'This market is closed right now. Trading resumes when it reopens.'],
-        InvalidToken: ['Session Expired', 'Your session is no longer valid. Please sign in again.'],
-        AuthorizationRequired: ['Sign-in Needed', 'Authorization is required. Please sign in again.']
+        OpenPositionLimit: ['Open Position Limit', 'You have reached the maximum number of open trades. The robot will resume automatically as they close.'],
+        RateLimit: ['Easing the Pace', 'Deriv is limiting how fast trades can be placed. The robot is slowing down automatically, so no action is needed.'],
+        DailyTurnoverLimitExceeded: ['Daily Limit Reached', 'You have reached your daily turnover limit on Deriv. Trading can resume after it resets at 00:00 GMT.'],
+        MarketIsClosed: ['Market Closed', 'This market is currently closed. Trading will resume when it reopens.'],
+        InvalidToken: ['Session Expired', 'Your session is no longer valid. Please sign in again to continue trading.'],
+        AuthorizationRequired: ['Sign-in Required', 'Authorization is required to place trades. Please sign in again to continue.']
       };
       var errUI = (function () {
         var st = document.createElement('style');
         st.textContent = [
           '@property --ia{syntax:"<angle>";initial-value:0deg;inherits:false}',
-          '#ipr-alert{--ac:#ff0055;--ac2:#ff00aa;position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;',
+          '#ipr-alert{--ac:#ff2d78;--ac2:#ff86ae;--glow:255,45,120;position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;',
           'padding:max(20px,env(safe-area-inset-top)) 16px max(20px,env(safe-area-inset-bottom));',
-          'background:radial-gradient(60% 50% at 50% 50%,rgba(255,0,85,.14),rgba(3,6,16,.68));',
-          '-webkit-backdrop-filter:blur(7px) saturate(1.2);backdrop-filter:blur(7px) saturate(1.2);',
-          'opacity:0;visibility:hidden;transition:opacity .3s,visibility .3s;font-family:var(--font-body),sans-serif}',
-          '#ipr-alert.ia-warn{--ac:#ff8800;--ac2:#ffcc00;background:radial-gradient(60% 50% at 50% 50%,rgba(255,136,0,.12),rgba(3,6,16,.68))}',
+          'background:radial-gradient(70% 55% at 50% 46%,rgba(var(--glow),.17),rgba(2,4,12,.8));',
+          '-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);',
+          'opacity:0;visibility:hidden;transition:opacity .35s,visibility .35s;font-family:var(--font-body),sans-serif;-webkit-font-smoothing:antialiased}',
+          '#ipr-alert.ia-warn{--ac:#ffa42e;--ac2:#ffd27a;--glow:255,164,46}',
           '#ipr-alert.ia-on{opacity:1;visibility:visible}',
-          '#ipr-alert .ia-card{position:relative;width:min(100%,360px);border-radius:26px;padding:2px;',
-          'background:conic-gradient(from var(--ia),var(--ac),var(--purple),var(--cyan),var(--ac2),var(--ac));animation:iaSpin 5s linear infinite;',
-          'box-shadow:0 30px 80px -12px color-mix(in srgb,var(--ac) 55%,transparent),0 0 90px -22px var(--purple);',
-          'transform:translateY(24px) scale(.9);opacity:0;transition:transform .55s cubic-bezier(.2,1.2,.3,1),opacity .35s}',
+          '#ipr-alert .ia-card{position:relative;width:min(100%,380px);border-radius:30px;padding:1px;',
+          'background:conic-gradient(from var(--ia),rgba(255,255,255,.07),var(--ac) 12%,rgba(255,255,255,.07) 30%,rgba(255,255,255,.07) 55%,var(--purple) 70%,rgba(255,255,255,.07) 86%);animation:iaSpin 7s linear infinite;',
+          'box-shadow:0 44px 90px -24px rgba(0,0,0,.85),0 0 130px -34px rgba(var(--glow),.6);',
+          'transform:translateY(30px) scale(.94);opacity:0;transition:transform .6s cubic-bezier(.2,1.15,.3,1),opacity .4s}',
           '#ipr-alert.ia-on .ia-card{transform:none;opacity:1}',
           '@keyframes iaSpin{to{--ia:360deg}}',
-          '#ipr-alert .ia-in{position:relative;overflow:hidden;border-radius:24px;padding:28px 22px 24px;text-align:center;color:#eaf1ff;',
-          'background:radial-gradient(120% 70% at 50% -10%,color-mix(in srgb,var(--ac) 26%,transparent),transparent 60%),linear-gradient(180deg,#121a36,#080d1e)}',
-          '#ipr-alert .ia-in::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.07) 50%,transparent 60%);transform:translateX(-120%);animation:iaSheen 4.5s ease-in-out infinite}',
-          '@keyframes iaSheen{60%,100%{transform:translateX(120%)}}',
-          '#ipr-alert .ia-ico{position:relative;width:74px;height:74px;margin:0 auto 14px;display:grid;place-items:center}',
-          '#ipr-alert .ia-ico::before,#ipr-alert .ia-ico::after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid var(--ac);opacity:0;animation:iaPulse 2.2s ease-out infinite}',
-          '#ipr-alert .ia-ico::after{animation-delay:1.1s}',
-          '@keyframes iaPulse{0%{transform:scale(.7);opacity:.7}100%{transform:scale(1.5);opacity:0}}',
-          '#ipr-alert .ia-disc{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,var(--ac2),var(--ac));box-shadow:0 0 28px var(--ac),inset 0 2px 6px rgba(255,255,255,.35)}',
-          '#ipr-alert svg{width:30px;height:30px;stroke:#fff;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}',
-          '#ipr-alert .ia-tag{display:inline-block;padding:4px 12px;border-radius:99px;font:700 10px var(--font-head),sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--ac2);background:color-mix(in srgb,var(--ac) 14%,transparent);border:1px solid color-mix(in srgb,var(--ac) 40%,transparent)}',
-          '#ipr-alert h3{margin:12px 0 6px;font:800 19px/1.2 var(--font-head),sans-serif;letter-spacing:.04em;background:linear-gradient(90deg,#fff,#ffd6e6,#fff);-webkit-background-clip:text;background-clip:text;color:transparent}',
-          '#ipr-alert p{margin:0 auto;max-width:300px;font-size:15px;line-height:1.45;font-weight:500;color:rgba(255,255,255,.62)}',
-          '#ipr-alert .ia-det{display:block;margin:12px 0 0;padding:8px 10px;border-radius:10px;font:500 11px/1.4 ui-monospace,Menlo,monospace;color:var(--ac2);background:rgba(255,255,255,.04);border:1px dashed color-mix(in srgb,var(--ac) 35%,transparent);word-break:break-word}',
-          '#ipr-alert .ia-wk{margin:18px 0 12px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}',
-          '#ipr-alert .ia-wh{display:flex;justify-content:space-between;margin-bottom:10px;font:700 10px var(--font-head),sans-serif;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.5)}',
-          '#ipr-alert .ia-wh b{color:var(--green)}',
-          '#ipr-alert .ia-dots{display:flex;gap:6px}',
-          '#ipr-alert .ia-dots i{flex:1;height:8px;border-radius:99px;background:rgba(255,255,255,.1)}',
-          '#ipr-alert .ia-dots i.ia-up{background:linear-gradient(90deg,var(--green),var(--cyan));box-shadow:0 0 10px rgba(0,255,136,.7);animation:iaDot 1.6s ease-in-out infinite}',
-          '#ipr-alert .ia-dots i.ia-up:nth-child(odd){animation-delay:.4s}',
-          '@keyframes iaDot{50%{opacity:.55}}',
-          '#ipr-alert .ia-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}',
-          '#ipr-alert .ia-st{padding:11px 4px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}',
-          '#ipr-alert .ia-st b{display:block;font:800 18px var(--font-head),sans-serif;font-variant-numeric:tabular-nums}',
-          '#ipr-alert .ia-st span{display:block;margin-top:4px;font:600 10px var(--font-body),sans-serif;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.5)}',
+          '#ipr-alert .ia-in{position:relative;overflow:hidden;border-radius:29px;padding:32px 22px 22px;text-align:center;color:#eaf1ff;',
+          'box-shadow:inset 0 1px 0 rgba(255,255,255,.09);',
+          'background:radial-gradient(100% 58% at 50% 0%,rgba(var(--glow),.22),transparent 68%),linear-gradient(180deg,#141b38 0%,#0a0f24 56%,#070b1a 100%)}',
+          '#ipr-alert .ia-in::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.055) 50%,transparent 58%);transform:translateX(-120%);animation:iaSheen 6s ease-in-out infinite}',
+          '@keyframes iaSheen{55%,100%{transform:translateX(120%)}}',
+          '#ipr-alert .ia-ico{position:relative;width:84px;height:84px;margin:0 auto 18px;display:grid;place-items:center}',
+          '#ipr-alert .ia-ico::before,#ipr-alert .ia-ico::after{content:"";position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--ac);opacity:0;animation:iaPulse 2.6s ease-out infinite}',
+          '#ipr-alert .ia-ico::after{animation-delay:1.3s}',
+          '@keyframes iaPulse{0%{transform:scale(.72);opacity:.65}100%{transform:scale(1.55);opacity:0}}',
+          '#ipr-alert .ia-disc{position:relative;width:64px;height:64px;border-radius:50%;display:grid;place-items:center;',
+          'background:radial-gradient(120% 120% at 30% 15%,rgba(255,255,255,.35),transparent 45%),linear-gradient(150deg,var(--ac2),var(--ac) 70%);',
+          'box-shadow:0 0 0 6px rgba(var(--glow),.12),0 14px 34px -6px rgba(var(--glow),.75),inset 0 1px 1px rgba(255,255,255,.55),inset 0 -6px 12px rgba(0,0,0,.18)}',
+          '#ipr-alert svg{width:30px;height:30px;stroke:#fff;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25))}',
+          '#ipr-alert .ia-tag{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 12px;border-radius:99px;font:700 10.5px var(--font-head),sans-serif;letter-spacing:.22em;text-transform:uppercase;color:var(--ac2);background:rgba(var(--glow),.1);border:1px solid rgba(var(--glow),.32)}',
+          '#ipr-alert .ia-tag::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--ac);box-shadow:0 0 10px var(--ac);animation:iaBlink 1.6s ease-in-out infinite}',
+          '@keyframes iaBlink{50%{opacity:.35}}',
+          '#ipr-alert h3{margin:16px 0 8px;font:800 25px/1.15 var(--font-head),sans-serif;letter-spacing:.01em;background:linear-gradient(180deg,#fff 30%,#c9d4f2);-webkit-background-clip:text;background-clip:text;color:transparent}',
+          '#ipr-alert p{margin:0 auto;max-width:312px;font-size:14.5px;line-height:1.6;font-weight:500;color:rgba(222,230,255,.66)}',
+          '#ipr-alert .ia-det{position:relative;display:block;margin:18px 0 0;padding:12px 14px 13px 17px;border-radius:14px;text-align:left;font:500 12.5px/1.55 var(--font-body),sans-serif;color:color-mix(in srgb,var(--ac2) 55%,#fff);',
+          'background:linear-gradient(90deg,rgba(var(--glow),.14),rgba(var(--glow),.03));border:1px solid rgba(var(--glow),.22);box-shadow:inset 3px 0 0 var(--ac);word-break:break-word}',
+          '#ipr-alert .ia-det::before{content:"Details";display:block;margin-bottom:5px;font:700 9.5px var(--font-head),sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--ac2);opacity:.75}',
+          '#ipr-alert .ia-wk{margin:16px 0 10px;padding:13px 15px 15px;border-radius:16px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}',
+          '#ipr-alert .ia-wh{display:flex;justify-content:space-between;align-items:center;margin-bottom:11px;font:700 10px var(--font-head),sans-serif;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.5)}',
+          '#ipr-alert .ia-wh b{font-size:12px;letter-spacing:.08em;color:var(--green)}',
+          '#ipr-alert .ia-dots{display:flex;gap:5px}',
+          '#ipr-alert .ia-dots i{flex:1;height:6px;border-radius:99px;background:rgba(255,255,255,.09)}',
+          '#ipr-alert .ia-dots i.ia-up{background:linear-gradient(90deg,var(--green),var(--cyan));box-shadow:0 0 12px rgba(0,255,136,.55);animation:iaDot 1.8s ease-in-out infinite}',
+          '#ipr-alert .ia-dots i.ia-up:nth-child(odd){animation-delay:.45s}',
+          '@keyframes iaDot{50%{opacity:.6}}',
+          '#ipr-alert .ia-stats{display:grid;grid-template-columns:repeat(3,1fr);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}',
+          '#ipr-alert .ia-st{padding:14px 4px 12px}',
+          '#ipr-alert .ia-st+.ia-st{border-left:1px solid rgba(255,255,255,.07)}',
+          '#ipr-alert .ia-st b{display:block;font:800 22px/1 var(--font-head),sans-serif;font-variant-numeric:tabular-nums}',
+          '#ipr-alert .ia-st span{display:block;margin-top:8px;font:600 9.5px/1.35 var(--font-body),sans-serif;letter-spacing:.13em;text-transform:uppercase;color:rgba(255,255,255,.5)}',
           '#ipr-alert .ia-ok b{color:var(--green)}#ipr-alert .ia-bad b{color:var(--red)}#ipr-alert .ia-pace b{color:var(--cyan)}',
-          '#ipr-alert .ia-acts{display:flex;gap:10px;margin-top:18px}',
-          '#ipr-alert button{flex:1;height:auto;min-height:50px;margin:0;border:0;border-radius:14px;padding:14px 10px;font:700 14px var(--font-body),sans-serif;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s}',
-          '#ipr-alert button:active{transform:scale(.96)}',
-          '#ipr-alert .ia-pri{color:#04201a;background:linear-gradient(135deg,var(--green),var(--cyan));box-shadow:0 10px 26px -8px var(--green),inset 0 1px 0 rgba(255,255,255,.45)}',
-          '#ipr-alert .ia-sec{color:#fff;background:linear-gradient(135deg,var(--purple),var(--ac));box-shadow:0 10px 26px -8px var(--ac),inset 0 1px 0 rgba(255,255,255,.35)}',
+          '#ipr-alert .ia-acts{display:flex;flex-direction:column-reverse;gap:10px;margin-top:18px}',
+          '#ipr-alert button{width:100%;height:auto;min-height:52px;margin:0;border:1px solid transparent;border-radius:16px;padding:15px 12px;font:700 13px var(--font-body),sans-serif;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s,filter .2s}',
+          '#ipr-alert button:active{transform:scale(.97)}',
+          '#ipr-alert button:hover{filter:brightness(1.08)}',
+          '#ipr-alert .ia-pri{color:#04201a;background:linear-gradient(135deg,var(--green),var(--cyan));box-shadow:0 14px 30px -10px var(--green),inset 0 1px 0 rgba(255,255,255,.5)}',
+          '#ipr-alert .ia-sec{color:#fff;background:linear-gradient(135deg,var(--purple),var(--ac));box-shadow:0 14px 30px -10px rgba(var(--glow),.8),inset 0 1px 0 rgba(255,255,255,.35)}',
+          '#ipr-alert.ia-hasact .ia-sec{color:rgba(255,255,255,.72);background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.13);box-shadow:none}',
           '#ipr-alert .ia-bar{position:absolute;left:0;bottom:0;height:3px;width:100%;background:linear-gradient(90deg,var(--ac),var(--purple),var(--cyan));transform-origin:left;transform:scaleX(0)}',
           '#ipr-alert .ia-bar.ia-run{animation:iaBar linear forwards}',
-          '@keyframes iaBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}'
+          '@keyframes iaBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}',
+          '@media (prefers-reduced-motion:reduce){#ipr-alert *,#ipr-alert .ia-card{animation:none!important}}'
         ].join('');
         document.head.appendChild(st);
 
@@ -3525,7 +3536,7 @@ body::after{
           '<div class="ia-card"><div class="ia-in">' +
             '<div class="ia-ico"><div class="ia-disc"><svg viewBox="0 0 24 24"><path d="M12 8v5"/><path d="M12 17h.01"/><path d="M10.3 3.9 2.4 17.6A2 2 0 0 0 4.1 20.6h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg></div></div>' +
             '<span class="ia-tag"></span><h3></h3><p></p><code class="ia-det"></code>' +
-            '<div class="ia-wk"><div class="ia-wh"><span>Workers</span><b></b></div><div class="ia-dots"></div></div>' +
+            '<div class="ia-wk"><div class="ia-wh"><span>Workers online</span><b></b></div><div class="ia-dots"></div></div>' +
             '<div class="ia-stats"><div class="ia-st ia-ok"><b></b><span>Successful Trades</span></div><div class="ia-st ia-bad"><b></b><span>Rejected Trades</span></div><div class="ia-st ia-pace"><b></b><span>Trades / Sec</span></div></div>' +
             '<div class="ia-acts"><button class="ia-sec">Dismiss</button><button class="ia-pri"></button></div>' +
             '<div class="ia-bar"></div>' +
@@ -3535,7 +3546,7 @@ body::after{
         var api = { onDismiss: null };
 
         api.show = function (d, restart) {
-          root.className = 'ia-on ia-' + d.kind;
+          root.className = 'ia-on ia-' + d.kind + (d.action ? ' ia-hasact' : '');
           q('.ia-tag').textContent = d.tag;
           q('h3').textContent = d.title;
           q('p').textContent = d.msg;
@@ -3591,11 +3602,11 @@ body::after{
         }
         if (problems.length) {
           return { kind: 'err', tag: 'Connection Issue', title: 'App ' + problems[0].slot + ' Needs Attention',
-                   msg: 'One of your connected apps needs to be re-authorized before it can trade.', detail: '',
+                   msg: 'One of your connected apps needs to be re-authorized before it can place trades.', detail: '',
                    action: { label: 'Fix Now', fn: IPAuth.goToPortal } };
         }
         return { kind: 'warn', tag: 'Reconnecting', title: 'Restoring Connection',
-                 msg: 'Some workers dropped. They are reconnecting automatically.', detail: '', action: null };
+                 msg: 'A few workers lost connection. They are reconnecting automatically.', detail: '', action: null };
       }
 
       function render() { try { renderInner(); } catch (e) { console.error('Popup render error:', e); } }
