@@ -3455,7 +3455,7 @@ body::after{
       /* ===== Premium centered alert (replaces the old bottom-left worker badge) ===== */
       var dismissedSig = '', lastSig = '', autoTimer = null;
       var ALERT_MAP = {
-        InsufficientBalance: ['Insufficient Balance', 'Your balance is too low to open this contract. The robot keeps retrying as your open stakes settle.'],
+        InsufficientBalance: ['Insufficient Balance', 'Your available balance is too low to open the next trade. The robot will automatically retry when your open trades have settled.'],
         OpenPositionLimit: ['Position Limit Reached', 'Too many contracts are open at once. The robot pauses briefly, then continues.'],
         RateLimit: ['Slow Down', 'Deriv is limiting the request speed. The robot is easing its pace automatically.'],
         DailyTurnoverLimitExceeded: ['Daily Limit Reached', 'Your daily turnover limit was hit. Deriv resets it at 00:00 GMT.'],
@@ -3526,7 +3526,7 @@ body::after{
             '<div class="ia-ico"><div class="ia-disc"><svg viewBox="0 0 24 24"><path d="M12 8v5"/><path d="M12 17h.01"/><path d="M10.3 3.9 2.4 17.6A2 2 0 0 0 4.1 20.6h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg></div></div>' +
             '<span class="ia-tag"></span><h3></h3><p></p><code class="ia-det"></code>' +
             '<div class="ia-wk"><div class="ia-wh"><span>Workers</span><b></b></div><div class="ia-dots"></div></div>' +
-            '<div class="ia-stats"><div class="ia-st ia-ok"><b></b><span>Trades OK</span></div><div class="ia-st ia-bad"><b></b><span>Rejected</span></div><div class="ia-st ia-pace"><b></b><span>Per sec</span></div></div>' +
+            '<div class="ia-stats"><div class="ia-st ia-ok"><b></b><span>Successful Trades</span></div><div class="ia-st ia-bad"><b></b><span>Rejected Trades</span></div><div class="ia-st ia-pace"><b></b><span>Trades / Sec</span></div></div>' +
             '<div class="ia-acts"><button class="ia-sec">Dismiss</button><button class="ia-pri"></button></div>' +
             '<div class="ia-bar"></div>' +
           '</div></div>';
@@ -3576,17 +3576,17 @@ body::after{
 
       function describe(pool, problems) {
         var raw = pool.lastError || '';
-        if (debugMode && !raw && !pool.halted && !problems.length) raw = 'InsufficientBalance: insufficient to buy this contract.';
+        if (debugMode && !raw && !pool.halted && !problems.length) raw = 'InsufficientBalance: Insufficient balance: A $18 net profit target requires a stake of $186.53, but your available balance is only $5.26.';
         var m = /^([A-Za-z]+):\s*(.*)$/.exec(raw);
         var code = m ? m[1] : '';
         var info = ALERT_MAP[code];
         if (pool.halted) {
-          return { kind: 'err', tag: 'Trading Stopped', title: ALERT_MAP[code] ? info[0] : 'Robot Stopped',
-                   msg: ALERT_MAP[code] ? info[1] : String(pool.halted).replace(/^Stopped:\s*/, ''), detail: raw, action: null };
+          return { kind: 'err', tag: code === 'InsufficientBalance' ? 'Trading Paused' : 'Trading Stopped', title: ALERT_MAP[code] ? info[0] : 'Robot Stopped',
+                   msg: ALERT_MAP[code] ? info[1] : String(pool.halted).replace(/^Stopped:\s*/, ''), detail: m ? m[2] : raw, action: null };
         }
         if (raw) {
           return { kind: 'err', tag: 'Trade Rejected', title: info ? info[0] : (code ? code.replace(/([a-z])([A-Z])/g, '$1 $2') : 'Trade Error'),
-                   msg: info ? info[1] : (m ? m[2] : raw), detail: raw,
+                   msg: info ? info[1] : (m ? m[2] : raw), detail: m ? m[2] : raw,
                    action: code === 'InsufficientBalance' ? { label: 'Add Funds', fn: function () { window.open('https://app.deriv.com/cashier/deposit', '_blank'); } } : null };
         }
         if (problems.length) {
@@ -4132,7 +4132,7 @@ body::after{
         for (var id in pendingBuys) { var m = tradeMeta[id]; if (m) inflight += m.stake; }
         if (free - inflight >= stake - 1e-9) { lowFundsSince = 0; return true; }
         var now = Date.now();
-        var msg = 'Insufficient balance: $' + getTargetProfit() + ' net profit needs a $' + stake.toFixed(2) + ' stake, but only $' + free.toFixed(2) + ' is available.';
+        var msg = 'Insufficient balance: A $' + getTargetProfit() + ' net profit target requires a stake of $' + stake.toFixed(2) + ', but your available balance is only $' + free.toFixed(2) + '.';
         if (free < stake - 1e-9 && openEstimate(3500) === 0) {
           warnStake(msg);
           if (!lowFundsSince) lowFundsSince = now;
