@@ -3146,7 +3146,7 @@ body::after{
    JS adds .lights-on to .light-bar in startAutoTrading() and removes it in
    stopAutoTrading(), so the lights flash exactly while trades are being placed.
    Pattern: red double-flash, then blue double-flash, white accent in between,
-   a 1.6s loop kept under 3 flashes/second. Reduced-motion users get a steady glow. */
+   a 1s loop (about 4 flashes/second). Reduced-motion users get a steady glow. */
 .light-bar{z-index:2}
 .light-bar.lights-on{overflow:visible}
 .light-bar::before,.light-bar::after{
@@ -3155,10 +3155,10 @@ body::after{
 }
 .light-bar::before{left:35%; background:radial-gradient(closest-side, rgb(255 36 56 / .55), rgb(255 36 56 / .16) 55%, transparent)}
 .light-bar::after{left:65%; background:radial-gradient(closest-side, rgb(47 123 255 / .6), rgb(47 123 255 / .18) 55%, transparent)}
-.light-bar.lights-on::before{animation:sirenWashA 1.6s linear infinite}
-.light-bar.lights-on::after{animation:sirenWashB 1.6s linear infinite}
+.light-bar.lights-on::before{animation:sirenWashA 1s linear infinite}
+.light-bar.lights-on::after{animation:sirenWashB 1s linear infinite}
 
-.light-bar.lights-on .light-bulb{transform:scale(1.14); animation-duration:1.6s; animation-timing-function:linear; animation-iteration-count:infinite; animation-delay:0ms}
+.light-bar.lights-on .light-bulb{transform:scale(1.14); animation-duration:1s; animation-timing-function:linear; animation-iteration-count:infinite; animation-delay:0ms}
 .light-bar.lights-on #light1{--sc:#ff2438; background:radial-gradient(circle at 34% 28%, #fff 0, #ff6070 30%, #ff2438 58%, #8a0010 100%); animation-name:sirenA}
 .light-bar.lights-on #light2{--sc:#d6eaff; background:radial-gradient(circle at 34% 28%, #fff 0, #fff 38%, #bcd9ff 100%); animation-name:sirenC}
 .light-bar.lights-on #light3{--sc:#2f7bff; background:radial-gradient(circle at 34% 28%, #fff 0, #7fb0ff 30%, #2f7bff 58%, #0a2a8c 100%); animation-name:sirenB}
