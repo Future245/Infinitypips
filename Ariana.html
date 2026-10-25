@@ -2984,6 +2984,74 @@ body::after{
   .stats-bar{padding-inline:max(16px, calc((100% - 860px) / 2 + 16px))}
 }
 
+/* ---------- 3b. HEADER v2 · seamless, roomy, studio-finish ----------
+   Visual only. The header now melts into the glass card instead of sitting on it as a
+   separate slab: no side stripe, no hard band, a larger logo jewel, fluid type that
+   never overflows on small phones, and a hairline that fades out at both ends. */
+.card-header{
+  flex-direction:row !important;
+  align-items:center;
+  justify-content:flex-start;
+  min-height:86px;
+  border-bottom:0;
+  box-shadow:none;
+  background:
+    linear-gradient(90deg, transparent 0%, rgb(var(--ipr-cyan) / .55) 28%, rgb(var(--ipr-violet) / .6) 72%, transparent 100%) bottom / 100% 1px no-repeat,
+    linear-gradient(180deg, rgb(255 255 255 / .07) 0%, rgb(255 255 255 / .012) 60%, transparent 100%);
+}
+.card-header .header-accent-bar{display:none}
+.card-header::before{
+  background:
+    radial-gradient(60% 150% at 12% 45%, rgb(var(--ipr-cyan) / .17) 0%, transparent 70%),
+    radial-gradient(48% 110% at 100% 0%, rgb(var(--ipr-violet) / .15) 0%, transparent 70%);
+}
+.brand{
+  gap:clamp(11px,3.4vw,15px);
+  padding:20px clamp(14px,4.5vw,22px) 19px clamp(16px,5vw,24px);
+  min-width:0;
+}
+.brand-mark{
+  width:clamp(46px,13.5vw,54px);
+  height:clamp(46px,13.5vw,54px);
+  border-radius:clamp(14px,4vw,17px);
+  font-size:clamp(12px,3.6vw,14.5px);
+  letter-spacing:-.04em;
+  box-shadow:
+    0 0 0 4px rgb(var(--ipr-cyan) / .07),
+    0 0 0 5px rgb(var(--ipr-cyan) / .16),
+    0 0 30px rgb(var(--ipr-cyan) / .5),
+    0 14px 24px -8px rgb(0 40 150 / .95),
+    inset 0 1px 0 rgb(255 255 255 / .6),
+    inset 0 -10px 14px -7px rgb(10 20 95 / .85);
+}
+.brand-mark::before{top:4px;left:5px;right:5px;border-radius:14px 14px 50% 50%}
+.brand-text{gap:9px;min-width:0}
+.brand-text h1{
+  font-size:clamp(10px,3.3vw,14px);
+  font-weight:800;
+  letter-spacing:.1em;
+  white-space:nowrap;
+}
+.brand-text span{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:clamp(7px,2.1vw,8.5px);
+  letter-spacing:.18em;
+  font-weight:600;
+  white-space:nowrap;
+}
+.brand-text span::before{
+  content:"";
+  flex:none;
+  width:5px;height:5px;
+  transform:rotate(45deg);
+  background:rgb(var(--ipr-cyan));
+  box-shadow:0 0 8px rgb(var(--ipr-cyan) / .9);
+  -webkit-text-fill-color:initial;
+}
+.brand-text span::after{display:none}
+
 @keyframes iprRowIn{from{opacity:0}to{opacity:1}}
 @keyframes iprLine{0%,55%{transform:translateX(-120%)}100%{transform:translateX(300%)}}
 @keyframes iprBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
